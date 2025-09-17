@@ -1,5 +1,5 @@
 """
-MofBuilder IO Module for reading and writing MOF structures.
+MofBuilder MD (Molecular Dynamics) Module for molecular dynamics simulations and setup.
 
 Copyright (C) 2024 MofBuilder Contributors
 
