@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mofbuilder"
 version = "0.1.0"
-description = "A Python library for building and analyzing Metal-Organic Frameworks (MOFs)"
+description = "A Python library for building and modelling Metal-Organic Frameworks (MOFs)"
 readme = "README.md"
 license = {text = "LGPL-3.0-or-later"}
 authors = [
-    {name = "MofBuilder Contributors", email = "mofbuilder@example.com"}
+    {name = "Chenxi Li", email = "chenxili@kth.se"}
 ]
 maintainers = [
-    {name = "MofBuilder Contributors", email = "mofbuilder@example.com"}
+    {name = "Chenxi Li", email = "chenxili@kth.se"}
 ]
 keywords = ["mof", "metal-organic-framework", "chemistry", "materials", "crystal"]
 classifiers = [
