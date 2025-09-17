@@ -7,7 +7,7 @@ We welcome contributions to MofBuilder! This document provides guidelines for co
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/your-username/MofBuilder.git
+   git clone https://github.com/caseyli01/MofBuilder.git
    cd MofBuilder
    ```
 3. Install the development dependencies:

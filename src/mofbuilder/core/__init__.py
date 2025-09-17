@@ -18,9 +18,9 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .atom import Atom
-from .bond import Bond
-from .framework import Framework
-from .lattice import Lattice
+from .builder import Builder
+from .defects import DefectGenerator
+from .optimizer import Optimizer
+from .preparation import Preparation
 
-__all__ = ["Atom", "Bond", "Framework", "Lattice"]
+__all__ = ["Builder", "DefectGenerator", "Optimizer", "Preparation"]

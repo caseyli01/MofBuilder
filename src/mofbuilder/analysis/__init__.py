@@ -18,8 +18,8 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .pore_analysis import PoreAnalyzer
-from .surface_area import SurfaceAreaCalculator
-from .topology import TopologyAnalyzer
+from .porosity import PorosityAnalyzer
+from .graph_analysis import GraphAnalyzer
 
-__all__ = ["PoreAnalyzer", "SurfaceAreaCalculator", "TopologyAnalyzer"]
+
+__all__ = ["PorosityAnalyzer", "GraphAnalyzer"]

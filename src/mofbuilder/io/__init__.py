@@ -18,9 +18,13 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .cif_reader import CifReader
+from .cif_parser import CifParser
 from .cif_writer import CifWriter
-from .xyz_reader import XyzReader
+from .xyz_parser import XyzParser
 from .xyz_writer import XyzWriter
+from .pdb_parser import PdbParser
+from .pdb_writer import PdbWriter
+from .gro_parser import GroParser
+from .gro_writer import GroWriter
 
-__all__ = ["CifReader", "CifWriter", "XyzReader", "XyzWriter"]
+__all__ = ["CifParser", "CifWriter", "XyzParser", "XyzWriter", "PdbParser", "PdbWriter", "GroParser", "GroWriter"]

@@ -1,3 +1,3 @@
-class CifWriter:
+class GroWriter:
     def __init__(self):
         pass

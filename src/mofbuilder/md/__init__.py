@@ -1,5 +1,5 @@
 """
-MofBuilder Visualization Module for MOF structure visualization.
+MofBuilder IO Module for reading and writing MOF structures.
 
 Copyright (C) 2024 MofBuilder Contributors
 
@@ -18,6 +18,7 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .viewer import Viewer
+from .forcefield import ForceFieldProcessor
+from .setup import MDSetup
 
-__all__ = ["Viewer"]
+__all__ = ["ForceFieldProcessor", "MDSetup"]

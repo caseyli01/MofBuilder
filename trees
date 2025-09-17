@@ -1,0 +1,30 @@
+src/mofbuilder/
+├── core/
+│   ├── builder.py              # MofBuilder orchestrator
+│   ├── optimizer.py            # Wrappers around scipy L-BFGS optimizer
+│   ├── preparation.py          # Prepare database, select nodes/linkers
+│   └── defects.py              # Defect creation logic
+│
+├── io/
+│   ├── gro_writer.py           # All write_gromacs_files, split gro, etc.
+│   ├── cif_parser.py
+│   ├── pdb_parser.py
+│   └── topology_writer.py      # top, itp, mdp generation
+│
+├── analysis/
+│   ├── porosity.py             # Zeo++, pyWindow, or custom graph porosity analysis
+│   ├── graph_analysis.py       # networkx-based connectivity checks
+│   └── md_analysis.py          # trajectory analysis via MDAnalysis
+│
+├── md/
+│   ├── prepare.py              # forcefield assignment, mdp, top, itp
+│   ├── runner.py               # openmm/gromacs runner
+│   └── analysis.py             # RMSD, RDF, diffusion, etc.
+│
+├── visualization/
+│   ├── viewer.py               # gro_show wrapper, py3Dmol, nglview
+│   └── plots.py                # matplotlib/plotly network plots
+│
+└── utils/
+    ├── helpers.py
+    └── file_ops.py

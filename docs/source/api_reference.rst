@@ -5,78 +5,49 @@ This section contains the API reference for all MofBuilder modules.
 
 Core Module
 -----------
-
-.. automodule:: mofbuilder.core
+.. automodule:: mofbuilder.core.builder
    :members:
 
-.. automodule:: mofbuilder.core.atom
+Optimizer Module
+----------------
+.. automodule:: mofbuilder.core.optimizer
    :members:
 
-.. automodule:: mofbuilder.core.bond
-   :members:
-
-.. automodule:: mofbuilder.core.lattice
-   :members:
-
-.. automodule:: mofbuilder.core.framework
+Defects Module
+--------------
+.. automodule:: mofbuilder.core.defects
    :members:
 
 I/O Module
 ----------
-
-.. automodule:: mofbuilder.io
+.. automodule:: mofbuilder.io.gro_writer
    :members:
 
-.. automodule:: mofbuilder.io.cif_reader
-   :members:
-
-.. automodule:: mofbuilder.io.cif_writer
-   :members:
-
-.. automodule:: mofbuilder.io.xyz_reader
-   :members:
-
-.. automodule:: mofbuilder.io.xyz_writer
+Topology Module
+---------------
+.. automodule:: mofbuilder.io.topology_writer
    :members:
 
 Analysis Module
 ---------------
-
-.. automodule:: mofbuilder.analysis
+.. automodule:: mofbuilder.analysis.porosity
    :members:
 
-.. automodule:: mofbuilder.analysis.pore_analysis
+MD Module
+---------
+.. automodule:: mofbuilder.md.prepare
    :members:
-
-.. automodule:: mofbuilder.analysis.surface_area
+.. automodule:: mofbuilder.md.runner
    :members:
-
-.. automodule:: mofbuilder.analysis.topology
-   :members:
-
-Utils Module
-------------
-
-.. automodule:: mofbuilder.utils
-   :members:
-
-.. automodule:: mofbuilder.utils.periodic_table
-   :members:
-
-.. automodule:: mofbuilder.utils.geometry
-   :members:
-
-.. automodule:: mofbuilder.utils.constants
+.. automodule:: mofbuilder.md.analysis
    :members:
 
 Visualization Module
 --------------------
-
-.. automodule:: mofbuilder.visualization
+.. automodule:: mofbuilder.visualization.viewer
    :members:
 
-.. automodule:: mofbuilder.visualization.structure_viewer
-   :members:
-
-.. automodule:: mofbuilder.visualization.property_plotter
+Utils Module
+------------
+.. automodule:: mofbuilder.utils.helpers
    :members:
