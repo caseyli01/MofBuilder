@@ -36,7 +36,9 @@ class PdbReader:
         # debug
         self._debug = False
 
-    def read_pdb(self):
+    def read_pdb(self,filepath=None):
+        if filepath is not None:
+            self.filepath = filepath
         assert_msg_critical(
             Path(self.filepath).exists(),
             f"pdb file {self.filepath} not found")
