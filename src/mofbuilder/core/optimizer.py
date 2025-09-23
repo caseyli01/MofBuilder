@@ -102,19 +102,8 @@ class OptimizationDriver:
                 # total_distance += dist ** 2
             if np.argmin(dist_matrix) > 1:
                 total_distance += 1e4  # penalty for the distance difference
-            else:
-                total_distance += np.min(dist_matrix)**2
-            #
-            for idx_i in range(len(rotated_i_positions)):
-                # second min and min distance difference not max
-                if len(dist_matrix[idx_i, :]) > 1:
-                    second_min_dist = np.partition(dist_matrix[idx_i, :], 1)[1]
-                else:
-                    second_min_dist = np.partition(dist_matrix[idx_i, :], 0)[0]
-                diff = second_min_dist - np.min(dist_matrix[idx_i, :])
-
-                if diff < 4:
-                    total_distance += 1e4
+            total_distance += np.min(dist_matrix)**2
+    
 
             total_distance += 1e3 / (np.max(dist_matrix) - np.min(dist_matrix)
                                     )  # reward for the distance difference
