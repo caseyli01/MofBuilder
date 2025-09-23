@@ -16,7 +16,7 @@ from ..io.pdb_reader import PdbReader
 from ..io.pdb_writer import PdbWriter
 
 
-class Node:
+class FrameNode:
 
     def __init__(self, comm=None, ostream=None, filepath=None):
         self.comm = comm or MPI.COMM_WORLD
@@ -259,6 +259,8 @@ class Node:
         self.pdbwriter.write(dummy_pdbfile_full_path,
                              header=header,
                              lines=all_atom_lines)
+        self.all_atom_lines = all_atom_lines
+        self.all_atom_bonds = all_atom_bonds
 
     def _generate_dummy_node_split_dict(self):
         head, tail = [], []
@@ -315,7 +317,9 @@ class Node:
             self.ostream.flush()
         with open(self.filename, "r") as src, open(target_path, "w") as dst:
             dst.write(src.read())
+            self.all_atom_lines = src.readlines()
         self.ostream.print_info(f"Node pdb file copied to {target_path}")
+
 
     def create(self):
         self.check_dirs()
@@ -356,7 +360,7 @@ class Node:
 
 
 if __name__ == "__main__":
-    node_test = Node()
+    node_test = FrameNode()
     node_test.filename = "tests/testdata/testnode.pdb"
     node_test.target_dir = "tests/testoutput"
     node_test.node_metal_type = "Zr"

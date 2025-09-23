@@ -12,7 +12,7 @@ from veloxchem.molecule import Molecule
 from ..io.pdb_reader import PdbReader
 from ..io.pdb_writer import PdbWriter
 
-class Linker:
+class FrameLinker:
     def __init__(self, comm=None, ostream=None, filepath=None):
         self.comm = comm or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -27,24 +27,30 @@ class Linker:
         self.pdbwriter = PdbWriter(comm=self.comm, ostream=self.ostream)
         self._debug = False
         self.linker_data = None
+        self.lines = None #center fragment lines
+        self.rows = None #outer fragment lines
     
-    def check_dirs(self):
-        assert_msg_critical(
-            Path(self.filename).exists(),
-            f"Linker file {self.filename} not found"
-        )
+    def check_dirs(self, passfilecheck=True):
+        if not passfilecheck:
+            assert_msg_critical(
+                Path(self.filename).exists(),
+                f"Linker file {self.filename} not found"
+            )
         self.target_dir = Path(self.target_dir or Path.cwd())
         self.target_dir.mkdir(parents=True, exist_ok=True)
         base = Path(self.filename).stem
         self.new_pdbfilename = self.target_dir / f"{base}_processed.pdb"
-       
-
-        self.ostream.print_info(f"Processing linker file: {self.filename} ...")
+    
+        if not passfilecheck :
+            self.ostream.print_info(f"Processing linker file: {self.filename} ...")
+        else:
+            self.ostream.print_info(f"Processing linker data ...")
         self.ostream.print_info(f"Linker topic: {self.linker_topic}")
         self.ostream.flush()
 
         if self._debug:
             self.ostream.print_info(f"Target directory: {self.target_dir}")
+
         
 
     def _create_lG(self, molecule):
@@ -170,13 +176,22 @@ class Linker:
         kick_nodes = []
         #test to remove nodeX and kick the small frag
         for i in pairXs:
-            lG_temp = lG.copy()
+            lG_temp = subgraph_outer_frag.copy()
             lG_temp.remove_node(i)
             frags = list(nx.connected_components(lG_temp))
             #sort frags by size
             frags.sort(key=len)
             small_frag_nodes = list(frags[0])
+            if len(frags)==1:
+                continue
+            if self._debug:
+                self.ostream.print_info(f"small_frag_nodes: {small_frag_nodes}")
+                self.ostream.flush()
             kick_nodes.extend(small_frag_nodes)
+
+        if self._debug:
+            self.ostream.print_info(f"kick_nodes: {kick_nodes}")
+            self.ostream.flush()
 
         subgraph_single_frag = lG.subgraph(outer_frag_nodes - set(kick_nodes))
         return subgraph_single_frag
@@ -453,15 +468,19 @@ class Linker:
             self.pairXs = self._get_pairX_outer_frag(connected_pairXs, outer_frag_nodes)
             self.subgraph_single_frag = self._cleave_outer_frag_subgraph(
                 self.lG, self.pairXs, outer_frag_nodes)
+            if self._debug:
+                self.ostream.print_info(f"subgraph_single_frag nodes: {self.subgraph_single_frag.nodes}")
             self.rows, self.frag_Xs = self._lines_of_single_frag(self.subgraph_single_frag, self.Xs_indices)
+            if self._debug:
+                self.ostream.print_info(f"subgraph_single_frag nodes: {self.subgraph_single_frag.nodes}")
             # single_frag_bonds = get_bonds_from_subgraph(subgraph_single_frag, Xs_indices)
             if linker_topic == 3:
                 if self._debug:
                     self.ostream.print_info(f"linker_center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"linker_outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
-                linker_center_node_pdb_name = Path(save_nodes_dir, "tricenter")
+                linker_center_node_pdb_name = str(Path(save_nodes_dir, "tricenter"))
                 self.create_pdb(linker_center_node_pdb_name, self.lines)
-                linker_branch_pdb_name = Path(save_edges_dir, "triedge")
+                linker_branch_pdb_name = str(Path(save_edges_dir, "triedge"))
                 self.create_pdb(linker_branch_pdb_name, self.rows)
                 # create_cif(lines,center_frag_bonds,save_nodes_dir,'tricenter.cif')
                 # create_cif(rows,single_frag_bonds,save_edges_dir,'triedge.cif')
@@ -477,8 +496,7 @@ class Linker:
                 if self._debug:
                     self.ostream.print_info(f"center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
-                linker_center_node_pdb_name = str(
-                    Path(save_nodes_dir, "tetracenter"))
+                linker_center_node_pdb_name = str(Path(save_nodes_dir, "tetracenter"))
                 self.create_pdb(linker_center_node_pdb_name, self.lines)
                 linker_branch_pdb_name = str(Path(save_edges_dir, "tetraedge"))
                 self.create_pdb(linker_branch_pdb_name, self.rows)
@@ -536,21 +554,39 @@ class Linker:
 
 
 
-    def create(self):
-        assert_msg_critical(self.filename is not None, "Linker: filename is not set. Please set the filename of the linker molecule.")
+    def create(self, molecule=None):
         assert_msg_critical(self.target_dir is not None, "Linker: target_dir is not set. Please set the target directory.")
         assert_msg_critical(self.linker_topic in [2, 3, 4] or self.linker_topic > 4, "Linker: linker_topic should be 2, 3, 4 or >4.")
-        self.check_dirs()
-        self.molecule = Molecule.read_xyz_file(self.filename)
+
+        if molecule is None:
+            assert_msg_critical(self.filename is not None, "Linker: filename is not set. Please set the filename of the linker molecule.")
+            self.check_dirs()
+            self.molecule = Molecule.read_xyz_file(self.filename)
+        else:
+            self.check_dirs(passfilecheck=True)
+            self.molecule = molecule
+
         self.process_linker_molecule(self.molecule, self.linker_topic)
         self.ostream.print_info("Linker processing completed.")
-        self.ostream.print_info(f"Processed linker file is saved as: {self.new_pdbfilename}")
+        if hasattr(self, "new_pdbfilename"):
+            self.ostream.print_info(f"Processed linker file is saved as: {self.new_pdbfilename}")
+        self.ostream.flush()
 
 
 if __name__ == "__main__":
-    linker_test = Linker()
+    linker_test = FrameLinker()
     linker_test.linker_topic = 2
     linker_test.filename = "tests/testdata/testlinker.xyz"
     linker_test.target_dir = "tests/testoutput"
-    linker_test._debug = False
+    #linker_test._debug = True
+    linker_test.create()
+
+    linker_test.linker_topic = 4
+    linker_test.filename = "tests/testdata/testtetralinker.xyz"
+    linker_test.target_dir = "tests/testoutput"
+    linker_test.create()
+
+    linker_test.linker_topic = 3
+    linker_test.filename = "tests/testdata/testtrilinker.xyz"
+    linker_test.target_dir = "tests/testoutput"
     linker_test.create()

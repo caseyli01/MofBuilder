@@ -8,7 +8,6 @@ from veloxchem.veloxchemlib import mpi_master
 from veloxchem.errorhandler import assert_msg_critical
 import mpi4py.MPI as MPI
 import sys
-from ..core.framework import Net
 """
 atom_type, atom_label, atom_number, residue_name, residue_number, x, y, z, spin, charge, note
 """

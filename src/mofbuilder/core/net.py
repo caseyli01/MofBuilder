@@ -14,7 +14,7 @@ import sys
 #Net.unit_cell_inv is the inverse of the unit cell matrix of the net
 
 
-class NetGraph:
+class FrameNet:
     '''creates the net graph from cif file'''
 
     def __init__(self, comm=None, ostream=None, filepath=None):
@@ -36,8 +36,12 @@ class NetGraph:
         self.ostream = ostream
 
         self.G = nx.Graph()
+        
         self.cifreader = CifReader()
         self.cif_file = None
+        self.edge_length_range = []
+
+        #will be set by create_net
         self.vvnode333 = None
         self.ecnode333 = None
         self.eenode333 = None
@@ -45,6 +49,11 @@ class NetGraph:
         self.cell_info = None
         self.unit_cell = None
         self.unit_cell_inv = None
+        self.pair_vertex_edge = None
+        self.max_degree = None
+        self.sorted_nodes = None
+        self.sorted_edges = None
+        self.linker_topic = None  
 
         #debug
         self._debug = False
@@ -136,7 +145,7 @@ class NetGraph:
         eenode333 = self.eenode333
 
         G = self.G
-        pair_ve = []
+        pair_vertex_edge = []
         vvnode333 = np.asarray(vvnode333)
         eenode333 = np.asarray(eenode333)
         for e in eenode333:
@@ -173,9 +182,9 @@ class NetGraph:
                                f"V{v2_idx}",
                                fcoords=(v1, v2),
                                fc_center=e)
-                    pair_ve.append((v1, v2, e))
+                    pair_vertex_edge.append((v1, v2, e))
         self.G = G
-        self.pair_ve = pair_ve
+        self.pair_vertex_edge = pair_vertex_edge
 
     def _find_pair_v_e_c(self):
         """
@@ -188,7 +197,7 @@ class NetGraph:
         unit_cell = self.unit_cell
 
         G = self.G
-        pair_ve = []
+        pair_vertex_edge = []
         for e in eenode333:
             dist_v_e = np.linalg.norm(np.dot(unit_cell, (vvnode333 - e).T).T,
                                       axis=1)
@@ -208,9 +217,9 @@ class NetGraph:
                                f"CV{v2_idx}",
                                fcoords=(v1, v2),
                                fc_center=e)
-                    pair_ve.append((f"V{v1_idx}", f"CV{v2_idx}", e))
+                    pair_vertex_edge.append((f"V{v1_idx}", f"CV{v2_idx}", e))
         self.G = G
-        self.pair_ve = pair_ve
+        self.pair_vertex_edge = pair_vertex_edge
 
     def _add_ccoords(self, G, unit_cell):
         """
@@ -481,7 +490,7 @@ def is_list_A_in_B(A, B):
 
 if __name__ == "__main__":
     cif_file = "tests/testdata/test.cif"
-    netgraph = NetGraph()
+    netgraph = FrameNet()
     netgraph.cifreader._debug = netgraph._debug
     #netgraph._debug = True
     netgraph.create_net(cif_file=cif_file)

@@ -13,7 +13,7 @@ from ..io.basic import nn
 from ..io.pdb_reader import PdbReader
 from ..io.pdb_writer import PdbWriter
 
-class Termination:
+class FrameTermination:
     """
     Handles the termination of the simulation.
     """
@@ -61,6 +61,6 @@ class Termination:
 
 
 if __name__ == "__main__":
-    term = Termination(filepath="tests/testdata/testterm.pdb")
+    term = FrameTermination(filepath="tests/testdata/testterm.pdb")
     term._debug = True
     term.create()
