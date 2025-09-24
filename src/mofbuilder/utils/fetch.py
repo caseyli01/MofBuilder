@@ -1,6 +1,6 @@
 from pathlib import Path
 
-def fetch_pdbfile(dir_name, keywords, nokeywords):
+def fetch_pdbfile(dir_name, keywords, nokeywords, ostream):
     candidates = []
     for pdb in Path(dir_name).rglob("*.pdb"):
         name = pdb.name
@@ -10,10 +10,10 @@ def fetch_pdbfile(dir_name, keywords, nokeywords):
     if len(candidates) == 0:
         raise ValueError(f"Cannot find a file including '{keywords}' ")
     elif len(candidates) == 1:
-        print("found the file including", keywords)
+        ostream.print_info(f"Found the file including {keywords}: {candidates[0]}")
         return candidates
     elif len(candidates) > 1:
-        print("found many files including", keywords)
+        ostream.print_info(f"Found many files including {keywords}: {candidates}")
         return candidates
 
 def copy_file(old_path, new_path):

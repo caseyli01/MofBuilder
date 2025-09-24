@@ -24,7 +24,7 @@ class FrameTermination:
         self.ostream = ostream or OutputStream(sys.stdout if self.rank == mpi_master() else None)
         self.properties = {}
         self.filename = filepath
-        self.X_atom = "X"
+        self.X_atom_type = "X"
         self.pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
 
         self._debug = False
@@ -38,26 +38,20 @@ class FrameTermination:
         assert_msg_critical(Path(self.filename).is_file(), f"Termination file {self.filename} does not exist.")
         if self._debug:
             self.ostream.print_info(f"Reading termination file {self.filename}")
-        self.pdbreader.read_pdb(self.filename)
+        self.pdbreader.read_pdb(self.filename,recenter=True)
         self.termination_data = self.pdbreader.data
         if self._debug:
             self.ostream.print_info(f"Got {len(self.termination_data)} atoms from termination file.")
             self.ostream.flush()
 
 
-    def extract_X_data(self):
-        assert_msg_critical(self.termination_data is not None, "Termination data is None. Cannot extract X atoms.")
-        indices = [i for i in range(len(self.termination_data)) if nn(self.termination_data[i, 0]) == self.X_atom]
-        self.X_data = self.termination_data[indices]
-        if self._debug:
-            self.ostream.print_info(f"Extracted {len(self.X_data)} atoms of type {self.X_atom} for termination.")
-            self.ostream.print_info(f"X_data: {self.X_data}")
-            self.ostream.flush()
+
 
     def create(self):
         self.read_termination_file()
         if self.termination_data is not None:
-            self.extract_X_data()
+            self.termination_X_data = self.termination_data[self.termination_data[:,-1]==self.X_atom_type]
+
 
 
 if __name__ == "__main__":

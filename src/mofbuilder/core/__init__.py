@@ -20,8 +20,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 from .builder import Builder
 from .defects import DefectGenerator
-from .optimizer import Optimizer
-from .preparation import Preparation
+from .optimizer import OptimizationDriver
 
-
-__all__ = ["Builder", "DefectGenerator", "Optimizer", "Preparation"]
+__all__ = ["Builder", "DefectGenerator", "OptimizationDriver"]

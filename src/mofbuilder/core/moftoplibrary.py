@@ -45,14 +45,22 @@ class MofTopLibrary:
         self.linker_topic = None
         self.net_type = None
 
-    def _read_mof_top_dict(self, data_path):
-        self.ostream.print_info(f"Reading MOF_topology_dict from {data_path}")
+        self._debug = False
+
+    def _read_mof_top_dict(self, data_path=None):
+        if data_path is None:
+            data_path = self.data_path
         if Path(data_path, "MOF_topology_dict").exists():
             mof_top_dict_path = str(Path(data_path, "MOF_topology_dict"))
             with open(mof_top_dict_path, "r") as f:
                 lines = f.readlines()
             # titles = lines[0].split()
             mofs = lines[1:]
+        if self._debug:
+            self.ostream.print_info(f"MOF_topology_dict path: {mof_top_dict_path}")
+            self.ostream.print_info(f"Got {len(mofs)} MOF families from MOF_topology_dict")
+            self.ostream.print_info(f"MOF families: {[mof.split()[0] for mof in mofs]}")
+            self.ostream.flush()
         mof_top_dict = {}
         for mof in mofs:
             mof_name = mof.split()[0]
@@ -72,6 +80,7 @@ class MofTopLibrary:
         # print mof_top_dict keys fit to screen
         self.ostream.print_info("Available MOF Family:")
         self.ostream.print_info(" ".join(self.mof_top_dict.keys()))
+        self.ostream.flush()
 
 
     def select_mof_family(self, mof_family):
@@ -84,16 +93,18 @@ class MofTopLibrary:
         if mof_family not in self.mof_top_dict.keys():
             self.ostream.print_warning(f"{mof_family} not in database")
             self.ostream.print_info("please select a MOF family from below:")
+            self.ostream.flush()
             self.list_mof_family()
             return
         self.ostream.print_info(f"node connectivity: {self.node_connectivity}")
         self.ostream.print_info(f"linker topic: {self.linker_topic}")
         self.ostream.print_info(f"available metal nodes: {self.mof_top_dict[mof_family]['metal']}")
-        self.ostream.print_info("please select a metal node type from above and set it as node_metal_type")
-        if not hasattr(self, "template_directory"):
+        self.ostream.flush()
+        if self.template_directory is None:
             self.template_directory = str(
                 Path(self.data_path, "template_database"))  # default
-            self.ostream.print_info(f"will search template cif files in {self.template_directory}")
+            self.ostream.print_info(f"Searching template cif files in {self.template_directory}...")
+            self.ostream.flush()
 
         template_cif_file = str(Path(self.template_directory, self.net_filename))
 
@@ -103,10 +114,11 @@ class MofTopLibrary:
 
             #TODO: set it as repository for template cif files
             self.ostream.print_info("or download the template cif files from the internet and  set it as the template directory") 
+            self.ostream.flush()
             return
         else:
-            self.ostream.print_info(f"{self.net_filename} is found in template_database")
-            self.ostream.print_info (f"{self.net_filename} will be used for MOF building")
+            self.ostream.print_info(f"{self.net_filename} is found and will be used for MOF building")
+            self.ostream.flush()
             self.selected_template_cif_file = template_cif_file
 
     def submit_template(
@@ -138,6 +150,15 @@ class MofTopLibrary:
         assert isinstance(template_node_metal, str), "please enter a string for node metal"
         assert isinstance(template_linker_topic, int), "please enter an integer for linker topic"
 
+        self.ostream.print_info(f"Submitting {mof_family} to the database {Path(self.data_path, 'template_database')}")
+        self.ostream.print_info(f"template cif file: {template_cif}")
+        self.ostream.print_info(f"node connectivity: {template_mof_node_connectivity}")
+        self.ostream.print_info(f"node metal: {template_node_metal}")
+        self.ostream.print_info(f"linker topic: {template_linker_topic}")
+        self.ostream.print_info(f"overwrite existing mof family: {overwrite}")
+        self.ostream.flush()
+
+
         if mof_family in self.mof_top_dict.keys():
             if not overwrite:
                 self.ostream.print_warning(
@@ -152,7 +173,8 @@ class MofTopLibrary:
             "topology": Path(template_cif).stem,
         }
         self.ostream.print_info(f"{mof_family} is added to the database")
-        self.ostream.print_info(f"{mof_family} will be used for MOF building")
+        self.ostream.print_info(f"{mof_family} is ready for MOF building")
+        self.ostream.flush()
 
         # rewrite mof_top_dict file
         with open(str(Path(self.data_path, "MOF_topology_dict")),
@@ -171,18 +193,21 @@ class MofTopLibrary:
                     )
                     fp.write(line + "\n")
         self.ostream.print_info("mof_top_dict file is updated")
+        self.ostream.flush()
         return str(Path(self.data_path, "template_database", template_cif))
     
-    def fetch(self,mof_family=None,node_metal_type=None):
+    def fetch(self,mof_family=None):
         self._read_mof_top_dict(self.data_path)
         if mof_family is None:
             self.ostream.print_info("please select a MOF family from below:")
+            self.ostream.flush()
             self.list_mof_family()
             return 
         else:
             if mof_family not in self.mof_top_dict.keys():
                 self.ostream.print_warning(f"{mof_family} not in database")
                 self.ostream.print_info("please select a MOF family from below:")
+                self.ostream.flush()
                 self.list_mof_family()
                 return 
             else:
@@ -191,5 +216,19 @@ class MofTopLibrary:
 
 
 
-    
+if __name__ == "__main__":
+    moflib = MofTopLibrary()
+    moflib.data_path = 'tests/database'
+    #moflib._debug = True
+    moflib.fetch(mof_family="Ui-66")
+
+    #moflib.submit_template(
+    #    template_cif="tests/database/template_database/fcu.cif",
+    #    mof_family="MOF-5",
+    #    template_mof_node_connectivity=4,
+    #    template_node_metal="Zn",
+    #    template_linker_topic=2,
+    #    overwrite=True,
+    #)
+
     

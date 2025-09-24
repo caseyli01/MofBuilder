@@ -36,7 +36,7 @@ class PdbReader:
         # debug
         self._debug = False
 
-    def read_pdb(self,filepath=None):
+    def read_pdb(self,filepath=None,recenter=False,com_type=None):
         if filepath is not None:
             self.filepath = filepath
         assert_msg_critical(
@@ -65,11 +65,60 @@ class PdbReader:
                     residue_number = int(line[22:26]) if line[22:26].strip() != "" else 1 # residue_number
                     charge = float(line[54:60]) if line[54:60].strip() != "" else 0.0  # charge
                     spin = float(line[60:66]) if line[60:66].strip() != "" else 0  # spin
-                    note = line[80:].strip()  # note
+                    note = nn(atom_type)  # note
                     count+=1
                     data.append(
                         [atom_type, atom_label, atom_number, residue_name, residue_number, value_x, value_y, value_z, spin, charge, note])
         self.data = np.vstack(data)
+        #should set type of array elements
+        def type_data(arr):
+            arr[:,2] = arr[:,2].astype(int)
+            arr[:,4] = arr[:,4].astype(int)
+            arr[:,5:8] = arr[:,5:8].astype(float)
+            arr[:,8] = arr[:,8].astype(float)
+            arr[:,9] = arr[:,9].astype(float)
+            return arr
+        self.data = type_data(self.data)
+
+        if recenter:
+            #if not define com_type, use all atoms to calculate com
+            #else use the specified atom type to calculate com
+            if com_type is None:
+                com_type_ccoords = self.data[:,5:8].astype(float)
+            else:
+                com_type_ccoords = self.data[self.data[:,-1]==com_type][:,5:8].astype(float)
+            com = np.mean(com_type_ccoords, axis=0)
+            if self._debug:
+                self.ostream.print_info(f"Center of mass type {com_type} at {com}")
+            self.data[:, 5:8] = self.data[:, 5:8].astype(float) - com
+            
+
+    def expand_arr2data(self, arr):
+        #arr type is [atom_type,atom_label,x,y,z]
+        if arr is None or len(arr) == 0:
+            return None,None
+        if isinstance(arr, list):
+            arr = np.vstack(arr)
+            
+        data = []
+        for i in range(len(arr)):
+            atom_type = arr[i, 0]
+            atom_label = arr[i, 1]
+            value_x = float(arr[i, 2])
+            value_y = float(arr[i, 3])
+            value_z = float(arr[i, 4])
+            atom_number = i + 1
+            residue_name = "MOL"
+            residue_number = 1
+            charge = 0.0
+            spin = 0
+            note = nn(atom_type)
+            data.append(
+                [atom_type, atom_label, atom_number, residue_name, residue_number, value_x, value_y, value_z, spin,
+                 charge, note])
+        data = np.vstack(data)
+        X_data = data[data[:,-1]=='X']
+        return data,X_data
 
     def process_node_pdb(self):
         # pdb only have cartesian coordinates

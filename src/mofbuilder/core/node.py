@@ -36,6 +36,7 @@ class FrameNode:
 
         self.dummy_node = False
         self.node_metal_type = None
+        self.node_com_type = "X"
 
         self.node_data = None
         self.node_xyz_string = None
@@ -46,7 +47,11 @@ class FrameNode:
 
         self.sG = None
         self.sG_subparts = None
+
+        #
         self._debug = False
+        self.save_files = False
+        self.lines = None
 
         # properties for dummy node
         self.metal_valence = None
@@ -59,14 +64,15 @@ class FrameNode:
         assert_msg_critical(
             Path(self.filename).exists(),
             f"Node pdb file {self.filename} not found")
-        self.target_dir = Path(self.target_dir or Path.cwd())
-        self.target_dir.mkdir(parents=True, exist_ok=True)
-        base = Path(self.filename).stem
-        self.new_pdbfilename = self.target_dir / (f"{base}_dummy.pdb"
-                                                  if self.dummy_node else Path(
-                                                      self.filename).name)
-        if self.dummy_node:
-            self.new_dummy_dictfilename = self.target_dir / f"{base}_dummy_dict.txt"
+        if self.save_files:
+            self.target_dir = Path(self.target_dir or Path.cwd())
+            self.target_dir.mkdir(parents=True, exist_ok=True)
+            base = Path(self.filename).stem
+            self.new_pdbfilename = self.target_dir / (f"{base}_dummy.pdb"
+                                                    if self.dummy_node else Path(
+                                                        self.filename).name)
+            if self.dummy_node:
+                self.new_dummy_dictfilename = self.target_dir / f"{base}_dummy_dict.txt"
         if self._debug:
             self.ostream.print_info(f"Node pdb file: {self.filename}")
             self.ostream.print_info(f"Target directory: {self.target_dir}")
@@ -75,7 +81,7 @@ class FrameNode:
 
     def _nodepdb2xyz(self):
         self.pdbreader.filepath = self.filename
-        self.pdbreader.read_pdb()
+        self.pdbreader.read_pdb(recenter=True,com_type=self.node_com_type)
         self.node_data = self.pdbreader.data
         xyz_lines = [f"{len(self.node_data)}\n", "\n"]
         xyz_lines += [f"{n[1]} {n[5]} {n[6]} {n[7]}\n" for n in self.node_data]
@@ -237,7 +243,8 @@ class FrameNode:
         return bonds
 
     def _write_dummy_node_pdb(self):
-        dummy_pdbfile_full_path = Path(self.target_dir) / self.dummy_pdbfile
+        if self.save_files:
+            dummy_pdbfile_full_path = Path(self.target_dir) / self.dummy_pdbfile
         metal = self.node_metal_type
         sG = self.sG
 
@@ -256,11 +263,12 @@ class FrameNode:
             f"REMARK Metal type: {metal}, Valence: {self.metal_valence}\n"
             f"REMARK Total atoms: {len(all_atom_lines)}, Total bonds: {len(all_atom_bonds)}\n"
         )
-        self.pdbwriter.write(dummy_pdbfile_full_path,
-                             header=header,
-                             lines=all_atom_lines)
-        self.all_atom_lines = all_atom_lines
-        self.all_atom_bonds = all_atom_bonds
+        if self.save_files:
+            self.pdbwriter.write(dummy_pdbfile_full_path,
+                                header=header,
+                                lines=all_atom_lines)
+        self.lines = all_atom_lines
+        self.bonds = all_atom_bonds
 
     def _generate_dummy_node_split_dict(self):
         head, tail = [], []
@@ -293,10 +301,13 @@ class FrameNode:
             "inres_count": hho_count + ho_count + o_count + dummy_count
         }
         self.dummy_node_split_dict = node_split_dict
-        self.dummy_node_split_dict_path = Path(
-            self.target_dir) / (Path(self.filename).stem + "_dummy_dict.txt")
+        if self.save_files:
+            self.dummy_node_split_dict_path = Path(
+                self.target_dir) / (Path(self.filename).stem + "_dummy_dict.txt")
 
     def _write_dummy_node_split_dict(self):
+        if not self.save_files:
+            return
         if self._debug:
             self.ostream.print_info(
                 f"Writing dummy node split dictionary to {self.dummy_node_split_dict_path}"
@@ -310,6 +321,11 @@ class FrameNode:
         )
 
     def _copy_node_pdb2target(self):
+        if not self.save_files:
+            with open(self.filename, "r") as src:
+                self.lines = src.readlines()
+            return
+
         target_path = Path(self.target_dir) / Path(self.filename).name
         if self._debug:
             self.ostream.print_info(
@@ -317,7 +333,7 @@ class FrameNode:
             self.ostream.flush()
         with open(self.filename, "r") as src, open(target_path, "w") as dst:
             dst.write(src.read())
-            self.all_atom_lines = src.readlines()
+            self.lines = src.readlines()
         self.ostream.print_info(f"Node pdb file copied to {target_path}")
 
 
@@ -333,6 +349,7 @@ class FrameNode:
             self.ostream.flush()
             self._write_dummy_node_pdb()
             self._write_dummy_node_split_dict()
+
             if self._debug:
                 self.ostream.print_info(
                     f"Final node graph has {self.sG.number_of_nodes()} nodes and {self.sG.number_of_edges()} edges."
@@ -344,19 +361,19 @@ class FrameNode:
             )
             self.ostream.flush()
             self._copy_node_pdb2target()
+        
+        self.node_data, self.node_X_data = self.pdbreader.expand_arr2data(self.lines)
 
-        #read the new pdb file to get self.node_data
-        self.pdbreader.filepath = self.new_pdbfilename
-        self.pdbreader.read_pdb()
-        self.node_data = self.pdbreader.data
-        self.ostream.print_info(
-            f"Node processing completed. New pdb file at {self.new_pdbfilename}."
-        )
-        self.ostream.print_info(
-            f"Node created from {self.filename} with metal type {self.node_metal_type}."
-        )
-        self.ostream.flush()
-        # return self.sG, self.dummy_node_split_dict if self.dummy_node else None
+        if self.save_files:
+            #read the new pdb file to get self.node_data
+            self.pdbreader.filepath = self.new_pdbfilename
+            self.ostream.print_info(
+                f"Node processing completed. New pdb file at {self.new_pdbfilename}."
+            )
+            self.ostream.print_info(
+                f"Node created from {self.filename} with metal type {self.node_metal_type}."
+            )
+            self.ostream.flush()
 
 
 if __name__ == "__main__":
@@ -366,4 +383,5 @@ if __name__ == "__main__":
     node_test.node_metal_type = "Zr"
     node_test.dummy_node = True
     node_test._debug = False
+    node_test.save_files = False
     node_test.create()

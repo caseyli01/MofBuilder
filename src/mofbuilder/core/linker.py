@@ -29,6 +29,7 @@ class FrameLinker:
         self.linker_data = None
         self.lines = None #center fragment lines
         self.rows = None #outer fragment lines
+        self.save_files = False
     
     def check_dirs(self, passfilecheck=True):
         if not passfilecheck:
@@ -39,7 +40,8 @@ class FrameLinker:
         self.target_dir = Path(self.target_dir or Path.cwd())
         self.target_dir.mkdir(parents=True, exist_ok=True)
         base = Path(self.filename).stem
-        self.new_pdbfilename = self.target_dir / f"{base}_processed.pdb"
+        if self.save_files:
+            self.new_pdbfilename = self.target_dir / f"{base}_processed.pdb"
     
         if not passfilecheck :
             self.ostream.print_info(f"Processing linker file: {self.filename} ...")
@@ -479,53 +481,56 @@ class FrameLinker:
                     self.ostream.print_info(f"linker_center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"linker_outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
                 linker_center_node_pdb_name = str(Path(save_nodes_dir, "tricenter"))
-                self.create_pdb(linker_center_node_pdb_name, self.lines)
-                linker_branch_pdb_name = str(Path(save_edges_dir, "triedge"))
-                self.create_pdb(linker_branch_pdb_name, self.rows)
+                if self.save_files:
+                    self.create_pdb(linker_center_node_pdb_name, self.lines)
+                    linker_branch_pdb_name = str(Path(save_edges_dir, "triedge"))
+                    self.create_pdb(linker_branch_pdb_name, self.rows)
                 # create_cif(lines,center_frag_bonds,save_nodes_dir,'tricenter.cif')
                 # create_cif(rows,single_frag_bonds,save_edges_dir,'triedge.cif')
-                return (
-                    self.subgraph_center_frag.number_of_nodes(),
-                    self.center_Xs,
-                    self.subgraph_single_frag.number_of_nodes(),
-                    self.frag_Xs,
-                    linker_center_node_pdb_name + ".pdb",
-                    linker_branch_pdb_name + ".pdb",
-                )
+                #return (
+                #    self.subgraph_center_frag.number_of_nodes(),
+                #    self.center_Xs,
+                #    self.subgraph_single_frag.number_of_nodes(),
+                #    self.frag_Xs,
+                #    linker_center_node_pdb_name + ".pdb",
+                #    linker_branch_pdb_name + ".pdb",
+                #)
             elif linker_topic == 4:
                 if self._debug:
                     self.ostream.print_info(f"center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
-                linker_center_node_pdb_name = str(Path(save_nodes_dir, "tetracenter"))
-                self.create_pdb(linker_center_node_pdb_name, self.lines)
-                linker_branch_pdb_name = str(Path(save_edges_dir, "tetraedge"))
-                self.create_pdb(linker_branch_pdb_name, self.rows)
+                if self.save_files:
+                    linker_center_node_pdb_name = str(Path(save_nodes_dir, "tetracenter"))
+                    self.create_pdb(linker_center_node_pdb_name, self.lines)
+                    linker_branch_pdb_name = str(Path(save_edges_dir, "tetraedge"))
+                    self.create_pdb(linker_branch_pdb_name, self.rows)
                 # create_cif(lines,center_frag_bonds,save_nodes_dir,'tetracenter.cif')
                 # create_cif(rows,single_frag_bonds,save_edges_dir,'tetraedge.cif')
-                return (
-                    self.subgraph_center_frag.number_of_nodes(),
-                    self.center_Xs,
-                    self.subgraph_single_frag.number_of_nodes(),
-                    self.frag_Xs,
-                    linker_center_node_pdb_name + ".pdb",
-                    linker_branch_pdb_name + ".pdb",
-                )
+                #return (
+                #    self.subgraph_center_frag.number_of_nodes(),
+                #    self.center_Xs,
+                #    self.subgraph_single_frag.number_of_nodes(),
+                #    self.frag_Xs,
+                #    linker_center_node_pdb_name + ".pdb",
+                #    linker_branch_pdb_name + ".pdb",
+                #)
             else:
                 linker_center_node_pdb_name = str(
                     Path(save_nodes_dir, "multicenter"))
-                self.create_pdb(linker_center_node_pdb_name, self.lines)
-                linker_branch_pdb_name = str(Path(save_edges_dir, "multiedge"))
-                self.create_pdb(linker_branch_pdb_name, self.rows)
+                if self.save_files:
+                    self.create_pdb(linker_center_node_pdb_name, self.lines)
+                    linker_branch_pdb_name = str(Path(save_edges_dir, "multiedge"))
+                    self.create_pdb(linker_branch_pdb_name, self.rows)
                 # create_cif(lines,center_frag_bonds,'nodes','multicenter.cif')
                 # create_cif(rows,single_frag_bonds,'edges','multiedge.cif')
-                return (
-                    self.subgraph_center_frag.number_of_nodes(),
-                    self.center_Xs,
-                    self.subgraph_single_frag.number_of_nodes(),
-                    self.frag_Xs,
-                    linker_center_node_pdb_name + ".pdb",
-                    linker_branch_pdb_name + ".pdb",
-                )
+                #return (
+                #    self.subgraph_center_frag.number_of_nodes(),
+                #    self.center_Xs,
+                #    self.subgraph_single_frag.number_of_nodes(),
+                #    self.frag_Xs,
+                #    linker_center_node_pdb_name + ".pdb",
+                #    linker_branch_pdb_name + ".pdb",
+                #)
 
         elif linker_topic == 2:  # ditopic
             pairXs = Xs_indices
@@ -538,24 +543,26 @@ class FrameLinker:
             self._lines_of_center_frag()
             # center_frag_bonds = get_bonds_from_subgraph(subgraph_center_frag, Xs_indices)
             # create_cif(lines,center_frag_bonds,'edges','diedge.cif')
-            edge_pdb_name = str(Path(save_edges_dir, "diedge"))
-            self.create_pdb(edge_pdb_name, self.lines)
+            if self.save_files:
+                edge_pdb_name = str(Path(save_edges_dir, "diedge"))
+                self.create_pdb(edge_pdb_name, self.lines)
             if self._debug:
                 self.ostream.print_info(f"linker_center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
-            return (
-                self.subgraph_center_frag.number_of_nodes(),
-                self.center_Xs,
-                0,
-                [],
-                None,
-                edge_pdb_name + ".pdb",
-            )
+            #return (
+            #    self.subgraph_center_frag.number_of_nodes(),
+            #    self.center_Xs,
+            #    0,
+            #    [],
+            #    None,
+            #    edge_pdb_name + ".pdb",
+            #)
 
 
 
 
     def create(self, molecule=None):
-        assert_msg_critical(self.target_dir is not None, "Linker: target_dir is not set. Please set the target directory.")
+        if self.save_files:
+            assert_msg_critical(self.target_dir is not None, "Linker: target_dir is not set. Please set the target directory.")
         assert_msg_critical(self.linker_topic in [2, 3, 4] or self.linker_topic > 4, "Linker: linker_topic should be 2, 3, 4 or >4.")
 
         if molecule is None:
@@ -567,6 +574,8 @@ class FrameLinker:
             self.molecule = molecule
 
         self.process_linker_molecule(self.molecule, self.linker_topic)
+        self.linker_center_data, self.linker_center_X_data = self.pdbreader.expand_arr2data(self.lines)
+        self.linker_outer_data, self.linker_outer_X_data = self.pdbreader.expand_arr2data(self.rows)
         self.ostream.print_info("Linker processing completed.")
         if hasattr(self, "new_pdbfilename"):
             self.ostream.print_info(f"Processed linker file is saved as: {self.new_pdbfilename}")
@@ -577,16 +586,16 @@ if __name__ == "__main__":
     linker_test = FrameLinker()
     linker_test.linker_topic = 2
     linker_test.filename = "tests/testdata/testlinker.xyz"
-    linker_test.target_dir = "tests/testoutput"
+    #linker_test.target_dir = "tests/testoutput"
     #linker_test._debug = True
     linker_test.create()
 
     linker_test.linker_topic = 4
     linker_test.filename = "tests/testdata/testtetralinker.xyz"
-    linker_test.target_dir = "tests/testoutput"
+    #linker_test.target_dir = "tests/testoutput"
     linker_test.create()
 
     linker_test.linker_topic = 3
     linker_test.filename = "tests/testdata/testtrilinker.xyz"
-    linker_test.target_dir = "tests/testoutput"
+    #linker_test.target_dir = "tests/testoutput"
     linker_test.create()
