@@ -22,6 +22,7 @@ from ..utils.geometry import (
     unit_cell_to_cartesian_matrix, fractional_to_cartesian, cartesian_to_fractional,
     locate_min_idx, reorthogonalize_matrix, find_optimal_pairings, find_edge_pairings
 )
+from .other import fetch_X_atoms_ind_array
 from .superimpose import superimpose_rotation_only
 
 class NetOptimizer:
@@ -962,17 +963,5 @@ def expand_set_rots(pname_set_dict, set_rotations, sorted_nodes):
             idx += 1
         return rotations
     
-# Function to fetch indices and coordinates of atoms with a specific label
-def fetch_X_atoms_ind_array(array, column, X):
-    # array: input array
-    # column: column index to check for label
-    # X: label to search for
-
-    ind = [
-        k for k in range(len(array)) if re.sub(r"\d", "", array[k, column]) == X
-    ]
-    x_array = array[ind]
-    return ind, x_array
-
 
 

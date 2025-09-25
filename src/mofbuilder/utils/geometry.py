@@ -106,3 +106,28 @@ def find_edge_pairings(sorted_nodes, sorted_edges, atom_positions):
     # atom_positions[j] = np.delete(atom_positions[j], idx_1, axis=0)
 
     return edge_pairings
+
+
+def Carte_points_generator(xyz_num):
+    """Generate a 3D grid of points with integer coordinates.
+    
+    Parameters:
+        xyz_num (tuple): Number of divisions in x, y, and z directions.
+        
+    Returns:
+        ndarray: Array of points with shape (n, 3).
+    """
+    x_num, y_num, z_num = xyz_num
+    # Use meshgrid for efficient point generation
+    x = np.arange(x_num + 1)
+    y = np.arange(y_num + 1)
+    z = np.arange(z_num + 1)
+    
+    # Create meshgrid and reshape to get all points
+    xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+    points = np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T
+    
+    return points
+
+
+

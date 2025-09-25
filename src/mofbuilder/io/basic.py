@@ -110,3 +110,7 @@ def find_keyword(keyword, s):
     else:
         return False
 
+
+def locate_min_idx(matrix):
+    min_idx = np.unravel_index(matrix.argmin(), matrix.shape)
+    return min_idx[0], min_idx[1]
