@@ -53,7 +53,7 @@ class FrameNet:
         self.max_degree = None
         self.sorted_nodes = None
         self.sorted_edges = None
-        self.linker_topic = None  
+        self.linker_coord_sites = None  
 
         #debug
         self._debug = False
@@ -411,7 +411,7 @@ class FrameNet:
         self.unit_cell_inv = np.linalg.inv(self.unit_cell)
 
         if self.cifreader.EC_con is None:  #ditopic linker MOF
-            self.linker_topic = 2
+            self.linker_coord_sites = 2
             self._find_pair_v_e(distance_range=self.edge_length_range)
             self._add_ccoords(self.G, self.unit_cell)
             self._set_DV_V(self.G)
@@ -425,7 +425,7 @@ class FrameNet:
             self._set_DE_E()
             self._sort_nodes_by_type_connectivity()
             self._find_and_sort_edges_bynodeconnectivity()
-            self.linker_topic = self.cifreader.EC_con
+            self.linker_coord_sites = self.cifreader.EC_con
 
         if self._debug:
             self.ostream.print_info(f"Net created from {self.cif_file}")
@@ -450,7 +450,7 @@ class FrameNet:
             )
         else:
             self.ostream.print_info(
-                f"This net fits a {self.max_degree}-connected node with {self.linker_topic}-connected linker Framework."
+                f"This net fits a {self.max_degree}-connected node with {self.linker_coord_sites}-connected linker Framework."
             )
             self.ostream.flush()
 

@@ -22,7 +22,7 @@ class FrameLinker:
         self.filename = filepath
         self.target_dir = None
         self.new_xyzfilename = None
-        self.linker_topic = 2
+        self.linker_coord_sites = 2
         self.pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
         self.pdbwriter = PdbWriter(comm=self.comm, ostream=self.ostream)
         self._debug = False
@@ -47,7 +47,7 @@ class FrameLinker:
             self.ostream.print_info(f"Processing linker file: {self.filename} ...")
         else:
             self.ostream.print_info(f"Processing linker data ...")
-        self.ostream.print_info(f"Linker topic: {self.linker_topic}")
+        self.ostream.print_info(f"Linker topic: {self.linker_coord_sites}")
         self.ostream.flush()
 
         if self._debug:
@@ -327,7 +327,7 @@ class FrameLinker:
             self.innerX_coords = innerX_coords
             self.connected_pairXs = connected_pairXs
 
-        elif self.linker_topic == 2:
+        elif self.linker_coord_sites == 2:
             if self.center_class == "twopoints":
                 if self._debug:
                     self.ostream.print_info(f"ditopic linker: center are two points")
@@ -420,13 +420,13 @@ class FrameLinker:
                             if adj_nonH_num > 2:
                                 self.Xs_indices.append(n)
                     #double check Xs_indices
-                    if len(self.Xs_indices) > self.linker_topic:
+                    if len(self.Xs_indices) > self.linker_coord_sites:
                         #cut bond connected to Xs_indices and if there is a fragment include H then should exclude this Xs
                         #use lG fragment
                         for x in self.Xs_indices:
                             lG_temp = self.lG.copy()
                             lG_temp.remove_node(x)
-                            if nx.number_connected_components(lG_temp) == self.linker_topic:
+                            if nx.number_connected_components(lG_temp) == self.linker_coord_sites:
                                 frags = list(nx.connected_components(lG_temp))
                                 #sort frags by size
                                 frags.sort(key=len)
@@ -450,7 +450,7 @@ class FrameLinker:
             )
 
         # write pdb files
-        if self.linker_topic > 2:  # multitopic
+        if self.linker_coord_sites > 2:  # multitopic
             frag_nodes = list(
                 sorted(nx.connected_components(self.lG), key=len, reverse=True))
             for f in frag_nodes:
@@ -563,7 +563,7 @@ class FrameLinker:
     def create(self, molecule=None):
         if self.save_files:
             assert_msg_critical(self.target_dir is not None, "Linker: target_dir is not set. Please set the target directory.")
-        assert_msg_critical(self.linker_topic in [2, 3, 4] or self.linker_topic > 4, "Linker: linker_topic should be 2, 3, 4 or >4.")
+        assert_msg_critical(self.linker_coord_sites in [2, 3, 4] or self.linker_coord_sites > 4, "Linker: linker_topic should be 2, 3, 4 or >4.")
 
         if molecule is None:
             assert_msg_critical(self.filename is not None, "Linker: filename is not set. Please set the filename of the linker molecule.")
@@ -573,7 +573,7 @@ class FrameLinker:
             self.check_dirs(passfilecheck=True)
             self.molecule = molecule
 
-        self.process_linker_molecule(self.molecule, self.linker_topic)
+        self.process_linker_molecule(self.molecule, self.linker_coord_sites)
         self.linker_center_data, self.linker_center_X_data = self.pdbreader.expand_arr2data(self.lines)
         self.linker_outer_data, self.linker_outer_X_data = self.pdbreader.expand_arr2data(self.rows)
         self.ostream.print_info("Linker processing completed.")
@@ -584,18 +584,18 @@ class FrameLinker:
 
 if __name__ == "__main__":
     linker_test = FrameLinker()
-    linker_test.linker_topic = 2
+    linker_test.linker_coord_sites = 2
     linker_test.filename = "tests/testdata/testlinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     #linker_test._debug = True
     linker_test.create()
 
-    linker_test.linker_topic = 4
+    linker_test.linker_coord_sites = 4
     linker_test.filename = "tests/testdata/testtetralinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     linker_test.create()
 
-    linker_test.linker_topic = 3
+    linker_test.linker_coord_sites = 3
     linker_test.filename = "tests/testdata/testtrilinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     linker_test.create()

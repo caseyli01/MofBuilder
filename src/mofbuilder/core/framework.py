@@ -21,6 +21,9 @@ from .linker import FrameLinker
 from .termination import FrameTermination
 from .moftoplibrary import MofTopLibrary
 from .optimizer import NetOptimizer
+from .supercell import SupercellBuilder,EdgeGraphBuilder
+from .defects import DefectGenerator
+
 from ..io.basic import pname, is_list_A_in_B
 from ..utils.geometry import cartesian_to_fractional, fractional_to_cartesian
 from .superimpose import superimpose_rotation_only
@@ -56,11 +59,14 @@ class Framework:
         self.dummy_atom_node = None
         self.dummy_atom_node_dict = None
         self.linker_xyzfile = None
-        self.linker_topic = None
+        self.linker_coord_sites= None
         self.linker_molecule = None
         self.linker_length = None
         self.termination_filename = None
         self.termination = False  # default use termination but need user to set the termination_filename
+
+        self.sc_unit_cell = None
+        self.supercell = [1, 1, 1] 
 
         self.target_directory = None
 
@@ -91,6 +97,11 @@ class Framework:
         #specific settings
         self.linker_length_search_range = []  #in Angstrom, [min, max]
 
+        #virtual edge settings for bridge type nodes
+        self.add_virtual_edge = False  #for bridge type node, add virtual edge to connect the bridge nodes
+        self.vir_edge_range = 0.5  # in fractional coordinate should be less than 0.5
+        self.vir_edge_max_neighbor = 2
+
     def _read_net(self):
         if self.data_path is None:
             self.data_path = get_data_path()
@@ -114,13 +125,13 @@ class Framework:
         self.G = self.frame_net.G.copy()
         self.unit_cell = self.frame_net.unit_cell
         self.unit_cell_inv = self.frame_net.unit_cell_inv
-        self.linker_topic = self.frame_net.linker_topic
+        self.linker_coord_sites= self.frame_net.linker_coord_sites
         self.sorted_nodes = self.frame_net.sorted_nodes
         self.sorted_edges = self.frame_net.sorted_edges
         self.pair_vertex_edge = self.frame_net.pair_vertex_edge
 
     def _read_linker(self):
-        self.frame_linker.linker_topic = self.linker_topic
+        self.frame_linker.linker_coord_sites= self.linker_coord_sites
         if self.linker_molecule is not None:
             self.frame_linker.create(molecule=self.linker_molecule)
         else:
@@ -132,7 +143,7 @@ class Framework:
         #pass linker data
         self.linker_center_data = self.frame_linker.linker_center_data
         self.linker_center_X_data = self.frame_linker.linker_center_X_data
-        if self.frame_linker.linker_topic > 2:
+        if self.frame_linker.linker_coord_sites> 2:
             self.linker_outer_data = self.frame_linker.linker_outer_data
             self.linker_outer_X_data = self.frame_linker.linker_outer_X_data
             self.linker_length = np.linalg.norm(
@@ -224,7 +235,7 @@ class Framework:
                 f"  Node: {self.frame_nodes.filename} with metal type {self.node_metal_type}"
             )
             self.ostream.print_info(
-                f"  Linker: {self.frame_linker.linker_topic}")
+                f"  Linker: {self.frame_linker.linker_coord_sites}")
             if self.termination:
                 self.ostream.print_info(
                     f"  Termination: {self.termination_filename}")
@@ -239,7 +250,7 @@ class Framework:
         self.net_optimizer.cell_info = self.cell_info
         self.net_optimizer.V_data = self.frame_nodes.node_data
         self.net_optimizer.V_X_data = self.frame_nodes.node_X_data
-        if self.frame_net.linker_topic > 2:
+        if self.frame_net.linker_coord_sites> 2:
             self.net_optimizer.EC_data = self.frame_linker.linker_center_data
             self.net_optimizer.EC_X_data = self.frame_linker.linker_center_X_data
             self.net_optimizer.E_data = self.frame_linker.linker_outer_data
@@ -270,6 +281,52 @@ class Framework:
 
         # save_xyz("scale_optimized_nodesstructure.xyz", scaled_rotated_node_positions)
 
+    def make_supercell(self):
+        self.supercellbuilder = SupercellBuilder(comm=self.comm, ostream=self.ostream)
+        self.supercellbuilder.sG = self.net_optimizer.sG
+        self.supercellbuilder.cell_info = self.net_optimizer.optimized_cell_info
+        self.supercellbuilder.supercell = self.supercell
+        self.supercellbuilder.linker_coord_sites= self.linker_coord_sites
+
+        #virtual edge settings for bridge type nodes
+        self.supercellbuilder.add_virtual_edge = self.add_virtual_edge
+        self.supercellbuilder.vir_edge_range = self.vir_edge_range
+        self.supercellbuilder.vir_edge_max_neighbor = self.vir_edge_max_neighbor
+        self.supercellbuilder._debug = True
+
+        self.supercellbuilder.build_supercellGraph()
+
+        #convert to edge graph
+        self.edgegraphbuilder = EdgeGraphBuilder(comm=self.comm, ostream=self.ostream)
+        self.edgegraphbuilder._debug = True
+        if self._debug:
+            self.ostream.print_info(f"superG has {len(self.supercellbuilder.superG.nodes())} nodes and {len(self.supercellbuilder.superG.edges())} edges")
+        self.edgegraphbuilder.superG = self.supercellbuilder.superG
+        self.edgegraphbuilder.linker_coord_sites= self.linker_coord_sites
+        self.edgegraphbuilder.custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
+        
+        self.edgegraphbuilder.sc_unit_cell = self.net_optimizer.sc_unit_cell
+        self.edgegraphbuilder.supercell = self.supercell
+        self.edgegraphbuilder._debug = False
+        self.edgegraphbuilder.build_edgeG_from_superG()
+
+        if self._debug:
+            self.ostream.print_info(f"eG has {len(self.edgegraphbuilder.eG.nodes())} nodes and {len(self.edgegraphbuilder.eG.edges())} edges")
+            self.ostream.print_info(f"cleaved_eG has {len(self.edgegraphbuilder.cleaved_eG.nodes())} nodes and {len(self.edgegraphbuilder.cleaved_eG.edges())} edges")
+            self.ostream.flush()
+    
+    def make_defects(self):
+        self.defectgenerator = DefectGenerator(comm=self.comm, ostream=self.ostream)
+        self.defectgenerator.cleaved_eG = self.edgegraphbuilder.cleaved_eG
+        self.defectgenerator.linker_coord_sites= self.linker_coord_sites
+        self.defectgenerator.node_topics = self.node_connectivity+self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+        self.defectgenerator._debug = True
+        self.defectgenerator._find_unsaturated_items()
+        self.ostream.print_info(f"unsaturated nodes, edges in eG: {len(self.defectgenerator.unsaturated_nodes)}, {len(self.defectgenerator.unsaturated_linkers)}")
+        self.ostream.flush()
+
+
+
 
 if __name__ == "__main__":
     mof = Framework(mof_family="UiO-66")
@@ -285,9 +342,12 @@ if __name__ == "__main__":
     mof.dummy_atom_node = True
     mof.read_framework()
     mof.optimize_framework()
+    mof._debug = True
+    mof.supercell = [2,2,2]
+
+    mof.make_supercell()
+    mof.make_defects()
 
     #optimize the roations and scale the net of unit cell to fit the linker length
-    #mof.optimize_framework()
-    #mof.update_framework() #defects and supercell
     #mof.terminate_framework()
     #mof.write_framework()

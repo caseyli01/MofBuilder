@@ -18,10 +18,10 @@ from veloxchem.veloxchemlib import mpi_master
 from veloxchem.errorhandler import assert_msg_critical
 from veloxchem.molecule import Molecule
 
-from ..io.basic import nn, nl,pname,is_list_A_in_B,lname
+from ..io.basic import nn, nl,pname,is_list_A_in_B,lname,arr_dimension
 from ..utils.geometry import (
     unit_cell_to_cartesian_matrix, fractional_to_cartesian, cartesian_to_fractional,
-    locate_min_idx, reorthogonalize_matrix, find_optimal_pairings, find_edge_pairings, Carte_points_generator,arr_dimension
+    locate_min_idx, reorthogonalize_matrix, find_optimal_pairings, find_edge_pairings, Carte_points_generator
 )
 from .other import fetch_X_atoms_ind_array, find_pair_x_edge_fc, order_edge_array
 from .superimpose import superimpose_rotation_only
@@ -52,8 +52,9 @@ class SupercellBuilder:
 
         #need to be set before use
         self.sG = None
-        self.linker_topic = None
+        self.linker_coord_sites = None
         self.supercell = [1, 1, 1]
+        self.cell_info = None #a list of 6 elements, a,b,c,alpha,beta,gamma
 
         #virtual edge settings for bridge type nodes
         self.add_virtual_edge = False
@@ -66,38 +67,61 @@ class SupercellBuilder:
 
 
     def _is_ditopic_linker(self):
-            return self.linker_topic == 2
+        return self.linker_coord_sites == 2
 
-    def build_supercellG(self):
+    def build_supercellGraph(self):
+        self.ostream.print_info("building supercell graph...")
+        self.superG_cell_info = [
+            self.cell_info[0] * self.supercell[0],
+            self.cell_info[1] * self.supercell[1],
+            self.cell_info[2] * self.supercell[2],
+            self.cell_info[3],
+            self.cell_info[4],
+            self.cell_info[5],
+        ]
+        self.ostream.print_info(f"supercell cell info: {self.superG_cell_info}")
+        self.ostream.flush()
         sG = self.sG.copy()
         if not self._is_ditopic_linker():
             self.multiedge_bundlings = self._bundle_multiedge(sG)
 
         superG = self._update_supercell_node_fpoints_loose(sG, self.supercell)
         superG = self._update_supercell_edge_fpoints(sG, superG, self.supercell)
+        if self._debug:
+            self.ostream.print_info(f"nodes in supercell graph superG: {len(superG.nodes())}")
+            self.ostream.print_info(f"edges in supercell graph superG: {len(superG.edges())}")
+            self.ostream.flush()
+
         if self._is_ditopic_linker():
-            self.superG = self._check_virtual_edge()
+            self.superG = self._check_virtual_edge(superG.copy())
             return self.superG
         # for multitopic linker MOF
         self.prim_multiedge_bundlings = self.multiedge_bundlings
         self.super_multiedge_bundlings = self._make_super_multiedge_bundlings(
             self.prim_multiedge_bundlings, self.supercell)
         superG = self._update_supercell_bundle(superG, self.super_multiedge_bundlings)
-        superG = self._check_multiedge_bundlings_insuperG(self.super_multiedge_bundlings, superG)
-        self.superG = self._check_virtual_edge()
+        new_superG = self._check_multiedge_bundlings_insuperG(self.super_multiedge_bundlings, superG)
+        self.superG = self._check_virtual_edge(new_superG.copy())
+        self.ostream.print_info("supercell graph built")
         return self.superG
 
-    def _check_virtual_edge(self):
-        superG = self.superG.copy()
+    def _check_virtual_edge(self,supG):
+        if self._debug:
+            self.ostream.print_info("checking virtual edge for bridge nodes...")
+            self.ostream.print_info(f"current edges in superG: {len(supG.edges())}")
+      
         if self.add_virtual_edge:
             superG = self._add_virtual_edge(
                 self.sc_unit_cell,
-                superG,
+                supG.copy(),
                 self.vir_edge_range,
                 self.vir_edge_max_neighbor,
             )
             if self._debug:
                 self.ostream.print_info("added virtual edge for bridge nodes")
+                self.ostream.print_info(f"current edges in superG after adding virtual edge:{len(superG.edges())}")
+        else:
+            superG = supG.copy()
         return superG
     
     def _bundle_multiedge(self, sG):
@@ -282,9 +306,9 @@ class SupercellBuilder:
 
 
     def _update_supercell_bundle(self, superG, super_multiedge_bundlings):
-        print("*" * 50)
-        print("superG nodes name", list(superG.nodes()))
-        print("*" * 50)
+        if self._debug:
+            self.ostream.print_info("updating supercell bundle...")
+            self.ostream.print_info(f"current nodes number in superG: {len(superG.nodes())}")
         for ec_node in super_multiedge_bundlings.keys():
             con_nodes = super_multiedge_bundlings[ec_node]
             # order the con_nodes by th x-x pair of the ecnode X atoms
@@ -439,80 +463,47 @@ class EdgeGraphBuilder:
 
         #need to be set before use
         self.superG = None
-        self.eG = None
-        self.linker_topic = None
-        self.node_max_degree = None
-        self.sc_cell_info = None #a list of 6 elements, a,b,c,alpha,beta,gamma
+        self.linker_coord_sites = None
         self.sc_unit_cell= None #3x3 matrix of the supercell unit cell
-        self.sc_unit_cell_inv = None #inverse of the supercell unit cell matrix
-        self.node_termination = None #pdb file path of the node termination
+        self.supercell = None #same as the supercell in supercellbuilder
+
+        #specific buffer range for cleaving the supercell
+        self.custom_fbox = [[0,1],[0,1],[0,1]] #in fractional coordinate
+
+        #will be generated during the process
+        self.eG = None
+        self.cleaved_eG = None
+        self.cleaved_edges = None
+        self.cleaved_nodes = None
+        self.matched_vnode_xind = None
+        self.xoo_dict = None
+        self.unsaturated_nodes = None
+        self.unsaturated_linkers = None
 
     def build_edgeG_from_superG(self):
 
-        if self.superG is None:
-            raise ValueError("superG is not set")
-        if self.linker_topic is None:
-            raise ValueError("linker_topic is not set")
-
         # Build the edge graph (eG) from the supercell graph (superG)
-        if self.linker_topic == 2:
+        if self.linker_coord_sites == 2:
             eG = self._superG_to_eG_ditopic(self.superG)
         else:
             eG = self._superG_to_eG_multitopic(self.superG, self.sc_unit_cell)
 
         # only keep the main fragment of the target MOF cell, remove the other fragments, to avoid the disconnected fragments
         self.ostream.print_info("main fragment of the eG kept")
-        self.eG = [eG.subgraph(c).copy() for c in nx.connected_components(eG)][0]
-        if self.linker_topic ==2:
-            self._add_xoo_to_edge_ditopic()
+        self.eG = [eG.subgraph(c).copy() for c in nx.connected_components(eG)][0] #keep the main fragment of the eG
+        if self.linker_coord_sites ==2:
+            self.eG, unsaturated_linker, self.matched_vnode_xind, self.xoo_dict = self._addxoo2edge_ditopic(
+            self.eG, self.sc_unit_cell)
+
         else:
-            self._add_xoo_to_edge_multitopic()
+            self.eG, unsaturated_linker, self.matched_vnode_xind, self.xoo_dict = self._addxoo2edge_multitopic(
+            self.eG, self.sc_unit_cell)
 
         #cleave the range of supercell buffer
-        _make_supercell_range_cleaved_eG()        
-
-        _find_unsaturated_node_eG()
-        _add_termination_to_unsaturated_node_eG()
-
-        remove_xoo_from_node()
-        extract_node_edge_term()
-        return eG
-    
+        self._make_supercell_range_cleaved_eG(self.eG, self.supercell, self.custom_fbox)
+        #will generate the cleaved_eG, cleaved_edges, cleaved_nodes
 
 
-
-
-
-    def _make_paired_Xto_x(self, ec_arr, merged_arr, neighbor_number, sc_unit_cell):
-        """
-        ec_arr: the array of the linker center node
-        merged_arr: the array of the merged edges
-        neighbor_number: the number of the neighbor nodes of the linker center node
-        """
-        ec_indices, ec_fpoints = fetch_X_atoms_ind_array(ec_arr, 0, "X")
-        if len(ec_indices) < neighbor_number:
-            # duplicate the cv_xatoms
-            ec_fpoints = np.vstack([ec_fpoints] * neighbor_number)
-        # extract only the X atoms in the neighbor edges but not the cv nodes: [len(ec_arr) :]
-        nei_indices, nei_fcpoints = fetch_X_atoms_ind_array(merged_arr, 0, "X") 
-        #skip atom type column
-        row_ind, col_ind = find_pair_x_edge_fc(ec_fpoints[:, 2:5].astype(float), nei_fcpoints[:, 2:5].astype(float), sc_unit_cell) 
-
-        # according col_ind order  to reorder the connected edge points
-        # switch the X to x for nei_fcpoints
-        for i in col_ind:
-            if nn(merged_arr[nei_indices[i], 0]) == "X":
-                merged_arr[nei_indices[i], 0] = "x" + nl(merged_arr[nei_indices[i], 0])
-        for k in row_ind:
-            if ec_indices[k] < len(ec_arr):
-                if nn(ec_arr[ec_indices[k], 0]) == "X":
-                    ec_arr[ec_indices[k], 0] = "x" + nl(ec_arr[ec_indices[k], 0])
-
-        ordered_edges_points_follow_ecXatoms = order_edge_array(
-            row_ind, col_ind, merged_arr)
-        # remove the duplicated cv_xatoms
-        ec_merged_arr = np.vstack((ec_arr, ordered_edges_points_follow_ecXatoms))
-        return ec_merged_arr
 
 
     def _superG_to_eG_multitopic(self, superG, sc_unit_cell):
@@ -591,7 +582,6 @@ class EdgeGraphBuilder:
                     eG.add_edge(u, v, type="virtual")
 
         return eG
-
 
     def _superG_to_eG_ditopic(self, superG):
         """
@@ -674,6 +664,36 @@ class EdgeGraphBuilder:
 
         return eG
 
+    def _make_paired_Xto_x(self, ec_arr, merged_arr, neighbor_number, sc_unit_cell):
+        """
+        ec_arr: the array of the linker center node
+        merged_arr: the array of the merged edges
+        neighbor_number: the number of the neighbor nodes of the linker center node
+        """
+        ec_indices, ec_fpoints = fetch_X_atoms_ind_array(ec_arr, 0, "X")
+        if len(ec_indices) < neighbor_number:
+            # duplicate the cv_xatoms
+            ec_fpoints = np.vstack([ec_fpoints] * neighbor_number)
+        # extract only the X atoms in the neighbor edges but not the cv nodes: [len(ec_arr) :]
+        nei_indices, nei_fcpoints = fetch_X_atoms_ind_array(merged_arr, 0, "X") 
+        #skip atom type column
+        row_ind, col_ind = find_pair_x_edge_fc(ec_fpoints[:, 2:5].astype(float), nei_fcpoints[:, 2:5].astype(float), sc_unit_cell) 
+
+        # according col_ind order  to reorder the connected edge points
+        # switch the X to x for nei_fcpoints
+        for i in col_ind:
+            if nn(merged_arr[nei_indices[i], 0]) == "X":
+                merged_arr[nei_indices[i], 0] = "x" + nl(merged_arr[nei_indices[i], 0])
+        for k in row_ind:
+            if ec_indices[k] < len(ec_arr):
+                if nn(ec_arr[ec_indices[k], 0]) == "X":
+                    ec_arr[ec_indices[k], 0] = "x" + nl(ec_arr[ec_indices[k], 0])
+
+        ordered_edges_points_follow_ecXatoms = order_edge_array(
+            row_ind, col_ind, merged_arr)
+        # remove the duplicated cv_xatoms
+        ec_merged_arr = np.vstack((ec_arr, ordered_edges_points_follow_ecXatoms))
+        return ec_merged_arr
 
     def _find_nearest_neighbor(self,i, n_n_distance_matrix):
         n_n_min_distance = np.min(n_n_distance_matrix[i:i + 1, :])
@@ -683,7 +703,6 @@ class EdgeGraphBuilder:
         # set the column to 1000 to avoid the same atom being selected again
         n_n_distance_matrix[:, n_j] = 1000
         return n_j, n_n_min_distance, n_n_distance_matrix
-
 
     def _find_surrounding_points(self, ind, n_n_distance_matrix, max_number):
         stop = 0  # if while loop is too long, stop it
@@ -697,7 +716,6 @@ class EdgeGraphBuilder:
                 ind, n_n_distance_matrix)
             nearest_neighbor[ind].append(n_j)
         return nearest_neighbor
-
 
     # Function to find 'XOO' pairs for a specific node
     def _xoo_pair_ind_node(self,single_node_fc, sc_unit_cell):
@@ -730,16 +748,15 @@ class EdgeGraphBuilder:
                     sorted([oind[m] for m in nearest_dict[key]])])
         return xoo_ind_list
 
-
     def _get_xoo_dict_of_node(self,eG, sc_unit_cell):
         # quick check the order of xoo in every node are same, select n0 and n1, if xoo_ind_node0 == xoo_ind_node1, then xoo_dict is the same
         # return xoo dict of every node, key is x index, value is o index
         n0 = [i for i in eG.nodes() if pname(i) != "EDGE"][0]
         n1 = [i for i in eG.nodes() if pname(i) != "EDGE"][1]
-        xoo_ind_node0 = self.xoo_pair_ind_node(
+        xoo_ind_node0 = self._xoo_pair_ind_node(
             eG.nodes[n0]["f_points"],
             sc_unit_cell)  # pick node one and get xoo_ind pair
-        xoo_ind_node1 = self.xoo_pair_ind_node(
+        xoo_ind_node1 = self._xoo_pair_ind_node(
             eG.nodes[n1]["f_points"],
             sc_unit_cell)  # pick node two and get xoo_ind pair
         if xoo_ind_node0 == xoo_ind_node1:
@@ -754,15 +771,6 @@ class EdgeGraphBuilder:
             print("xoo_ind_node1", xoo_ind_node1)
         return xoo_dict
 
-    def _remove_node_by_index(self,eG, remove_node_list, remove_edge_list):
-        for n in eG.nodes():
-            if pname(n) != "EDGE":
-                if eG.nodes[n]["index"] in remove_node_list:
-                    eG.remove_node(n)
-            if pname(n) == "EDGE":
-                if -1 * eG.nodes[n]["index"] in remove_edge_list:
-                    eG.remove_node(n)
-        return eG
 
 
     def _addxoo2edge_multitopic(self,eG, sc_unit_cell):
@@ -841,7 +849,6 @@ class EdgeGraphBuilder:
                 # print('add xoo to edge node',n) #debug
         return eG, unsaturated_linker, matched_vnode_X, xoo_dict
 
-
     def _addxoo2edge_ditopic(self,eG, sc_unit_cell):
         xoo_dict = self._get_xoo_dict_of_node(eG, sc_unit_cell)
         matched_vnode_X = []
@@ -917,686 +924,103 @@ class EdgeGraphBuilder:
         return eG, unsaturated_linker, matched_vnode_X, xoo_dict
 
 
-    def _find_unsaturated_node(self, eG, node_topics):
-        # find unsaturated node V in eG
-        unsaturated_node = []
-        for n in eG.nodes():
-            if pname(n) != "EDGE":
-                real_neighbor = []
-                for cn in eG.neighbors(n):
-                    if eG.edges[(n, cn)]["type"] == "real":
-                        real_neighbor.append(cn)
-                if len(real_neighbor) < node_topics:
-                    unsaturated_node.append(n)
-        return unsaturated_node
 
-
-    def _find_unsaturated_linker(self, eG, linker_topics):
-        # find unsaturated linker in eG
-        unsaturated_linker = []
-        for n in eG.nodes():
-            if pname(n) == "EDGE" and len(list(eG.neighbors(n))) < linker_topics:
-                unsaturated_linker.append(n)
-        return unsaturated_linker
-
-
-    def _add_xoo_to_edge_multitopic(self):
-        eG = self.eG
-        eG, unsaturated_linker, matched_vnode_xind, xoo_dict = self._addxoo2edge_multitopic(
-            eG, self.sc_unit_cell)
-        self.unsaturated_linker = unsaturated_linker
-        self.matched_vnode_xind = matched_vnode_xind
-        self.xoo_dict = xoo_dict
-        self.eG = eG
-        return eG
-
-    def _add_xoo_to_edge_ditopic(self):
-        """
-        analyze eG and link the XOO atoms to the EDGE, update eG, for ditopic linker MOF
-        """
-        eG = self.eG
-        eG, unsaturated_linker, matched_vnode_xind, xoo_dict = self._addxoo2edge_ditopic(
-            eG, self.sc_unit_cell)
-        self.unsaturated_linker = unsaturated_linker
-        self.matched_vnode_xind = matched_vnode_xind
-        self.xoo_dict = xoo_dict
-        self.eG = eG
-        return eG
-
-    def main_frag_eG(self):
-        """
-        only keep the main fragment of the target MOF cell, remove the other fragments, to avoid the disconnected fragments
-        """
-        eG = self.eG
-        self.eG = [eG.subgraph(c).copy() for c in nx.connected_components(eG)
-                  ][0]
-        print("main fragment of the MOF cell is kept"
-             )  # ,len(self.eG.nodes()),'nodes')
-        # print('fragment size list:',[len(c) for c in nx.connected_components(eG)]) #debug
-        return self.eG
-
-    def make_supercell_range_cleaved_eG(self, buffer_plus=0, buffer_minus=0):
-            supercell = self.supercell
-            new_eG = self.eG.copy()
-            eG = self.eG
-            removed_edges = []
-            removed_nodes = []
-            for n in eG.nodes():
-                if pname(n) != "EDGE":
-                    if check_supercell_box_range(eG.nodes[n]["fcoords"], supercell,
-                                                buffer_plus, buffer_minus):
-                        pass
-                    else:
-                        new_eG.remove_node(n)
-                        removed_nodes.append(n)
-                elif pname(n) == "EDGE":
-                    if (arr_dimension(eG.nodes[n]["fcoords"]) == 2
-                    ):  # ditopic linker have two points in the fcoords
-                        edge_coords = np.mean(eG.nodes[n]["fcoords"], axis=0)
-                    elif (
-                            arr_dimension(eG.nodes[n]["fcoords"]) == 1
-                    ):  # multitopic linker have one point in the fcoords from EC
-                        edge_coords = eG.nodes[n]["fcoords"]
-
-                    if check_supercell_box_range(edge_coords, supercell,
-                                                buffer_plus, buffer_minus):
-                        pass
-                    else:
-                        new_eG.remove_node(n)
-                        removed_edges.append(n)
-
-            matched_vnode_xind = self.matched_vnode_xind
-            self.matched_vnode_xind = update_matched_nodes_xind(
-                removed_nodes,
-                removed_edges,
-                matched_vnode_xind,
-            )
-
-            self.eG = new_eG
-            return new_eG, removed_edges, removed_nodes
-
-
-
-
-
-
-
-
-
-
-
-
-
-# functions for write
-# write gro file
-def extract_node_edge_term(tG, sc_unit_cell):
-    nodes_tG = []
-    terms_tG = []
-    edges_tG = []
-    node_res_num = 0
-    term_res_num = 0
-    edge_res_num = 0
-    nodes_check_set = set()
-    nodes_name_set = set()
-    edges_check_set = set()
-    edges_name_set = set()
-    terms_check_set = set()
-    terms_name_set = set()
-    for n in tG.nodes():
-        if pname(n) != "EDGE":
-            postions = tG.nodes[n]["noxoo_f_points"]
-            name = tG.nodes[n]["name"]
-            nodes_check_set.add(len(postions))
-            nodes_name_set.add(name)
-            if len(nodes_check_set) > len(nodes_name_set):
-                raise ValueError(
-                    "node index is not continuous, MOF have too many mixed nodes?"
-                )
-            node_res_num += 1
-            nodes_tG.append(
-                np.hstack((
-                    np.tile(
-                        np.array([node_res_num, name]),
-                        (len(postions), 1)),  # residue number and residue name
-                    postions[:, 1:2],  # atom type (element)
-                    fractional_to_cartesian(
-                        postions[:,
-                                 2:5], sc_unit_cell),  # Cartesian coordinates
-                    postions[:, 0:1],  # atom name
-                    np.tile(np.array([n]), (len(postions), 1)),
-                )))  # node name in eG is added to the last column
-            if "term_c_points" in tG.nodes[n]:
-                for term_ind_key, c_positions in tG.nodes[n][
-                        "term_c_points"].items():
-                    terms_check_set.add(len(c_positions))
-                    name = "T" + tG.nodes[n]["name"]
-                    terms_name_set.add(name)
-                    if len(terms_check_set) > len(terms_name_set):
-                        raise ValueError("term index is not continuous")
-
-                    term_res_num += 1
-                    terms_tG.append(
-                        np.hstack((
-                            np.tile(
-                                np.array([term_res_num, name]),
-                                (len(c_positions), 1),
-                            ),  # residue number and residue name
-                            c_positions[:, 1:2],  # atom type (element)
-                            c_positions[:, 2:5],  # Cartesian coordinates
-                            c_positions[:, 0:1],  # atom name
-                            np.tile(np.array([term_ind_key]),
-                                    (len(c_positions), 1)),
-                        )))  # term name in eG is added to the last column
-
-        elif pname(n) == "EDGE":
-            postions = np.vstack(
-                (tG.nodes[n]["f_points"], tG.nodes[n]["xoo_f_points"]))
-            name = tG.nodes[n]["name"]
-            edges_check_set.add(len(postions))
-            edges_name_set.add(name)
-            if len(edges_check_set) > len(edges_name_set):
-                print(edges_check_set)
-                # raise ValueError('edge atom number is not continuous')
-                print(
-                    "edge atom number is not continuous,ERROR edge name:",
-                    len(edges_check_set),
-                    len(edges_name_set),
-                )
-            edge_res_num += 1
-            edges_tG.append(
-                np.hstack((
-                    np.tile(
-                        np.array([edge_res_num, name]),
-                        (len(postions), 1)),  # residue number and residue name
-                    postions[:, 1:2],  # atom type (element)
-                    fractional_to_cartesian(
-                        postions[:,
-                                 2:5], sc_unit_cell),  # Cartesian coordinates
-                    postions[:, 0:1],  # atom name
-                    np.tile(np.array([n]), (len(postions), 1)),
-                )))  # edge name in eG is added to the last column
-
-    return nodes_tG, edges_tG, terms_tG, node_res_num, edge_res_num, term_res_num
-
-
-def check_supercell_box_range(point, supercell, buffer_plus, buffer_minus):
-    # to cleave eG to supercell box
-
-    supercell_x = supercell[0] + buffer_plus
-    supercell_y = supercell[1] + buffer_plus
-    supercell_z = supercell[2] + buffer_plus
-    if (point[0] >= 0 + buffer_minus and point[0] <= supercell_x and
-            point[1] >= 0 + buffer_minus and point[1] <= supercell_y and
-            point[2] >= 0 + buffer_minus and point[2] <= supercell_z):
-        return True
-    else:
-        # print(point, 'out of supercell box range:  [',supercell_x,supercell_y,supercell_z, '],   will be excluded') #debug
-        return False
-
-
-def replace_edges_by_callname(edge_n_list,
-                              eG,
-                              sc_unit_cell_inv,
-                              new_linker_pdb,
-                              prefix="R"):
-    new_linker_atoms, new_linker_ccoords, new_linker_x_ccoords = process_node_pdb(
-        new_linker_pdb, "X")
-    for edge_n in edge_n_list:
-        # check if edge_n is in eG
-        if edge_n not in eG.nodes():
-            print("this linker is not in MOF, will be skipped", edge_n)
-            continue
-        edge_n = edge_n
-        edge_f_points = eG.nodes[edge_n]["f_points"]
-        x_indices = [
-            i for i in range(len(edge_f_points))
-            if nn(edge_f_points[i][0]) == "X"
-        ]
-        edge_x_points = edge_f_points[x_indices]
-        edge_com = np.mean(edge_x_points[:, 2:5].astype(float), axis=0)
-        edge_x_fcoords = edge_x_points[:, 2:5].astype(float) - edge_com
-
-        new_linker_x_fcoords = cartesian_to_fractional(new_linker_x_ccoords,
-                                                       sc_unit_cell_inv)
-        new_linker_fcoords = cartesian_to_fractional(new_linker_ccoords,
-                                                     sc_unit_cell_inv)
-
-        _, rot, trans = superimpose(new_linker_x_fcoords, edge_x_fcoords)
-        replaced_linker_fcoords = np.dot(new_linker_fcoords, rot) + edge_com
-        replaced_linker_f_points = np.hstack(
-            (new_linker_atoms, replaced_linker_fcoords))
-
-        eG.nodes[edge_n]["f_points"] = replaced_linker_f_points
-        eG.nodes[edge_n]["name"] = prefix + edge_n
-
-    return eG
-
-
-# the following functions are used for the split node to metal, hho,ho,o and update name and residue number
-
-
-def extract_node_name_from_gro_resindex(res_index, node_array_list):
-    node_array = np.vstack(node_array_list)
-    nodes_name = set()
-    for node_ind in res_index:
-        node_name = node_array[node_array[:, 0] == str(node_ind)][:, -1]
-        name_set = set(node_name)
-        nodes_name = nodes_name.union(name_set)
-    return nodes_name
-
-
-def make_dummy_split_node_dict(dummy_node_name):
-    node_split_dict = {}
-    dict_path = dummy_node_name.split(".")[0] + "_dict"
-    with open(dict_path, "r") as f:
-        lines = f.readlines()
-    # node_res_counts = 0
-    for li in lines:
-        li = li.strip("\n")
-        key = li[:20].strip(" ")
-        value = li[-4:].strip(" ")
-        node_split_dict[key] = int(value)
-    return node_split_dict
-
-
-def chunk_array(chunk_list, array, chunk_num, chunksize):
-    chunk_list.extend(
-        array[i * chunksize:(i + 1) * chunksize] for i in range(chunk_num))
-    return chunk_list
-
-
-def rename_node_arr(node_split_dict, node_arr):
-    metal_count = node_split_dict["METAL_count"]
-    dummy_len = int(node_split_dict["dummy_res_len"])
-    metal_num = metal_count * dummy_len
-    hho_num = node_split_dict["HHO_count"] * 3
-    ho_num = node_split_dict["HO_count"] * 2
-    o_num = node_split_dict["O_count"] * 1
-    metal_range = metal_num
-    hho_range = metal_range + hho_num
-    ho_range = hho_range + ho_num
-    o_range = ho_range + o_num
-    # print(metal_range,hho_range,ho_range,o_range) #debug
-
-    metals_list = []
-    hhos_list = []
-    hos_list = []
-    os_list = []
-    for idx in set(node_arr[:, 0]):
-        idx_arr = node_arr[node_arr[:, 0] == idx]
-        if metal_num > 0:
-            metal = idx_arr[0:metal_range].copy()
-            metal[:, 1] = "METAL"
-            metals_list = chunk_array(metals_list, metal,
-                                      node_split_dict["METAL_count"], dummy_len)
-        if hho_num > 0:
-            hho = idx_arr[metal_range:hho_range].copy()
-            hho[:, 1] = "HHO"
-            hhos_list = chunk_array(hhos_list, hho,
-                                    node_split_dict["HHO_count"], 3)
-        if ho_num > 0:
-            ho = idx_arr[hho_range:ho_range].copy()
-            ho[:, 1] = "HO"
-            hos_list = chunk_array(hos_list, ho, node_split_dict["HO_count"], 2)
-        if o_num > 0:
-            o = idx_arr[ho_range:o_range].copy()
-            o[:, 1] = "O"
-            os_list = chunk_array(os_list, o, node_split_dict["O_count"], 1)
-
-    return metals_list, hhos_list, hos_list, os_list
-
-
-def merge_metal_list_to_node_array(merged_node_edge_term, metals_list, line_num,
-                                   res_count):
-    if any([len(metal) == 0 for metal in metals_list]):
-        return merged_node_edge_term, line_num, res_count
-    for i in range(len(metals_list)):
-        metal = metals_list[i]
-        metal[:, 0] = i + 1
-        formatted_gro_lines, line_num = convert_node_array_to_gro_lines(
-            metal, line_num, res_count)
-        merged_node_edge_term += formatted_gro_lines
-    res_count += len(metals_list)
-    return merged_node_edge_term, line_num, res_count
-
-
-def convert_node_array_to_gro_lines(array, line_num_start, res_num_start):
-    formatted_gro_lines = []
-
-    for i in range(len(array)):
-        line = array[i]
-        ind_inres = i + 1
-        name = line[1]
-        value_atom_number_in_gro = int(ind_inres + line_num_start)  # atom_number
-        value_label = re.sub(r"\d", "", line[2]) + str(ind_inres)  # atom_label
-        value_resname = str(name)[0:3]  # +str(eG.nodes[n]['index'])  # residue_name
-        value_resnumber = int(res_num_start + int(line[0]))  # residue number
-        value_x = 0.1 * float(line[3])  # x
-        value_y = 0.1 * float(line[4])  # y
-        value_z = 0.1 * float(line[5])  # z
-        formatted_line = "%5d%-5s%5s%5d%8.3f%8.3f%8.3f" % (
-            value_resnumber,
-            value_resname,
-            value_label,
-            value_atom_number_in_gro,
-            value_x,
-            value_y,
-            value_z,
-        )
-        formatted_gro_lines.append(formatted_line + "\n")
-    return formatted_gro_lines, value_atom_number_in_gro
-
-
-def merge_node_edge_term(nodes_tG, edges_tG, terms_tG, node_res_num,
-                         edge_res_num):
-    merged_node_edge_term = []
-    line_num = 0
-    for node in nodes_tG:
-        formatted_gro_lines, line_num = convert_node_array_to_gro_lines(
-            node, line_num, 0)
-        merged_node_edge_term += formatted_gro_lines
-    for edge in edges_tG:
-        formatted_gro_lines, line_num = convert_node_array_to_gro_lines(
-            edge, line_num, node_res_num)
-        merged_node_edge_term += formatted_gro_lines
-    for term in terms_tG:
-        formatted_gro_lines, line_num = convert_node_array_to_gro_lines(
-            term, line_num, node_res_num + edge_res_num)
-        merged_node_edge_term += formatted_gro_lines
-    return merged_node_edge_term
-
-
-def save_node_edge_term_gro(merged_node_edge_term,
-                            gro_name,
-                            dir_name="output_gros"):
-    Path(dir_name).mkdir(parents=True, exist_ok=True)
-    gro_name = str(Path(dir_name, gro_name))
-    with open(gro_name + ".gro", "w") as f:
-        head = []
-        head.append("eG_NET\n")
-        head.append(str(len(merged_node_edge_term)) + "\n")
-        f.writelines(head)
-        f.writelines(merged_node_edge_term)
-        tail = ["20 20 20 \n"]
-        f.writelines(tail)
-
-
-#################below are from display.py######################
-
-
-def gro_string_show(gro_lines_list, w=800, h=600, res_id=True, res_name=True):
-    try:
-        import py3Dmol
-
-        viewer = py3Dmol.view(width=w, height=h)
-        lines = gro_lines_list
-
-        viewer.addModel("".join(lines), "gro")
-        # viewer.setStyle({"stick": {}})
-
-        viewer.setViewStyle({"style": "outline", "width": 0.05})
-        viewer.setStyle({"stick": {}, "sphere": {"scale": 0.20}})
-        if res_id or res_name:
-            for i in range(2, len(lines) - 1):
-                if lines[i].strip() == "":
-                    continue
-                if lines[i - 1][0:5] == lines[i][0:5]:
-                    continue
-
-                value_resnumber = int((lines[i])[0:5])
-                value_resname = lines[i][5:10]
-                if value_resname.strip() == "TNO":
-                    continue
-                # value_label = lines[i][10:15]
-                # value_atom_number = int(lines[i][15:20])
-                value_x = float(lines[i][20:28]) * 10  # x
-                value_y = float(lines[i][28:36]) * 10  # y
-                value_z = float(lines[i][36:44]) * 10  # z
-
-                text = ""
-                if res_name:
-                    text += str(value_resname)
-                if res_id:
-                    text += str(value_resnumber)
-
-                viewer.addLabel(
-                    text,
-                    {
-                        "position": {
-                            "x": value_x,
-                            "y": value_y,
-                            "z": value_z,
-                        },
-                        "alignment": "center",
-                        "fontColor": "white",
-                        "font": "Arial",
-                        "fontSize": 12,
-                        "backgroundColor": "black",
-                        "backgroundOpacity": 0.5,
-                    },
-                )
-        viewer.render()
-        viewer.zoomTo()
-        viewer.show()
-    except ImportError:
-        raise ImportError("Unable to import py3Dmol")
-
-
-
-    def _make_supercell_range_cleaved_eG(self, buffer_plus=0, buffer_minus=0):
-        supercell = self.supercell
-        new_eG = self.eG.copy()
-        eG = self.eG
+    def _make_supercell_range_cleaved_eG(self,eG, supercell, custom_fbox):
+        new_eG = eG.copy()
         removed_edges = []
         removed_nodes = []
+        custom_fbox= np.array(custom_fbox) # [[xlo,xhi],[ylo,yhi],[zlo,zhi]]
+        def check_supercell_box_range(fcoords, supercell, custom_fbox):
+            # check if the fcoords is in the supercell box range with buffer
+            for i in range(3):
+                if fcoords[i] < custom_fbox[i, 0] or fcoords[i] > custom_fbox[i, 1]:
+                    return False
+            return True 
+
         for n in eG.nodes():
             if pname(n) != "EDGE":
                 if check_supercell_box_range(eG.nodes[n]["fcoords"], supercell,
-                                             buffer_plus, buffer_minus):
+                                            custom_fbox):
                     pass
                 else:
                     new_eG.remove_node(n)
                     removed_nodes.append(n)
             elif pname(n) == "EDGE":
-                if (arr_dimension(eG.nodes[n]["fcoords"]) == 2
-                   ):  # ditopic linker have two points in the fcoords
+                # ditopic linker have two points in the fcoords
+                if (arr_dimension(eG.nodes[n]["fcoords"]) == 2):  
                     edge_coords = np.mean(eG.nodes[n]["fcoords"], axis=0)
-                elif (
-                        arr_dimension(eG.nodes[n]["fcoords"]) == 1
-                ):  # multitopic linker have one point in the fcoords from EC
+                # multitopic linker have one point in the fcoords from EC
+                elif (arr_dimension(eG.nodes[n]["fcoords"]) == 1):  
                     edge_coords = eG.nodes[n]["fcoords"]
 
-                if check_supercell_box_range(edge_coords, supercell,
-                                             buffer_plus, buffer_minus):
+                if check_supercell_box_range(edge_coords, supercell, custom_fbox):
                     pass
                 else:
                     new_eG.remove_node(n)
                     removed_edges.append(n)
 
-        matched_vnode_xind = self.matched_vnode_xind
-        self.matched_vnode_xind = update_matched_nodes_xind(
-            removed_nodes,
-            removed_edges,
-            matched_vnode_xind,
-        )
+        self.matched_vnode_xind = self._update_matched_nodes_xind(removed_nodes,removed_edges,self.matched_vnode_xind)
 
-        self.eG = new_eG
-        return new_eG, removed_edges, removed_nodes
+        self.cleaved_eG = new_eG.copy()
+        self.cleaved_edges = removed_edges
+        self.cleaved_nodes = removed_nodes
 
-    def set_node_topic(self, node_topic):
+    def _update_matched_nodes_xind(self, removed_nodes_list, removed_edges_list, matched_vnode_xind):
         """
-        manually set the node topic, normally should be the same as the maximum degree of the node in the template
+        Update the matched_vnode_xind list after nodes/edges have been removed by cleaving.
+
+        Each entry in matched_vnode_xind is expected to be a tuple/list of the form:
+            (node, xind, edge)
+        - node: the vnode identifier (string) that was matched
+        - xind: the index (or indices) of the X atom(s) in that node
+        - edge: the edge identifier (string) that was matched
+
+        This function removes entries where:
+        - the matched edge has been removed (edge in removed_edges_list) but the vnode itself remains,
+          because that match is no longer valid; or
+        - the vnode itself has been removed (node in removed_nodes_list).
+
+        Parameters:
+            removed_nodes_list (list): node identifiers removed during cleaving
+            removed_edges_list (list): edge identifiers removed during cleaving
+            matched_vnode_xind (list): list of (node, xind, edge) matches to be filtered
+
+        Returns:
+            list: filtered matched_vnode_xind with invalid entries removed
         """
-        self.node_topic = node_topic
+        # indices of entries to delete from matched_vnode_xind
+        to_remove_row = []
 
-    def find_unsaturated_node_eG(self):
-        """
-        use the eG to find the unsaturated nodes, whose degree is less than the node topic
-        """
-        eG = self.eG
-        if hasattr(self, "node_topic"):
-            node_topic = self.node_topic
-        else:
-            node_topic = self.node_max_degree
-        unsaturated_node = find_unsaturated_node(eG, node_topic)
-        self.unsaturated_node = unsaturated_node
-        return unsaturated_node
+        # Iterate through the matched list and mark entries that should be removed.
+        # We use indices because we will build a new list by excluding these indices.
+        for i in range(len(matched_vnode_xind)):
+            node, xind, edge = matched_vnode_xind[i]
 
-    def find_unsaturated_linker_eG(eG, linker_topics):
-        """
-        use the eG to find the unsaturated linkers, whose degree is less than linker topic
-        """
-        new_unsaturated_linker = find_unsaturated_linker(eG, linker_topics)
-        return new_unsaturated_linker
+            # If the edge was removed but the node is still present, the match is invalid.
+            if edge in removed_edges_list and node not in removed_nodes_list:
+                if self._debug:
+                    self.ostream.print_info(f"remove edge {edge}, {matched_vnode_xind[i]} from matched_vnode_xind")
+                to_remove_row.append(i)
 
-    def set_node_terminamtion(self, term_file):
-        """
-        pdb file, set the node termination file, which contains the information of the node terminations, should have X of connected atom (normally C),
-        Y of two connected O atoms (if in carboxylate group) to assist the placement of the node terminations
-        """
+            # If the node itself was removed, remove the match regardless of the edge.
+            elif node in removed_nodes_list:
+                if self._debug:
+                    self.ostream.print_info(f"remove node {node}, {matched_vnode_xind[i]} from matched_vnode_xind")
+                to_remove_row.append(i)
 
-        term_data = termpdb(term_file)
-        term_info = term_data[:, :-3]
-        term_coords = term_data[:, -3:]
-        xterm, _ = Xpdb(term_data, "X")
-        oterm, _ = Xpdb(term_data, "Y")
-        term_xvecs = xterm[:, -3:]
-        term_ovecs = oterm[:, -3:]
-        term_coords = term_coords.astype("float")
-        term_xvecs = term_xvecs.astype("float")
-        term_ovecs = term_ovecs.astype("float")
+        # Build a new list excluding the marked indices. This preserves original ordering
+        # for entries that remain valid.
+        update_matched_vnode_xind = [ entry for j, entry in enumerate(matched_vnode_xind) if j not in to_remove_row ]
 
-        term_ovecs_c = np.mean(np.asarray(term_ovecs), axis=0)
-        term_coords = term_coords - term_ovecs_c
-        term_xoovecs = np.vstack((term_xvecs, term_ovecs))
-        term_xoovecs = term_xoovecs - term_ovecs_c
-        self.node_termination = term_file
-        self.term_info = term_info
-        self.term_coords = term_coords
-        self.term_xoovecs = term_xoovecs
+        return update_matched_vnode_xind
 
-    # Function to add node terminations
-    def add_terminations_to_unsaturated_node(self):
-        """
-        use the node terminations to add terminations to the unsaturated nodes
 
-        """
-        unsaturated_node = [
-            n for n in self.unsaturated_node if n in self.eG.nodes()
-        ]
-        xoo_dict = self.xoo_dict
-        matched_vnode_xind = self.matched_vnode_xind
-        eG = self.eG
-        sc_unit_cell = self.sc_unit_cell
-        (
-            unsaturated_vnode_xind_dict,
-            unsaturated_vnode_xoo_dict,
-            self.matched_vnode_xind_dict,
-        ) = make_unsaturated_vnode_xoo_dict(unsaturated_node, xoo_dict,
-                                            matched_vnode_xind, eG,
-                                            sc_unit_cell)
-        # term_file: path to the termination file
-        # ex_node_cxo_cc: exposed node coordinates
-
-        node_oovecs_record = []
-        for n in eG.nodes():
-            eG.nodes[n]["term_c_points"] = {}
-        for exvnode_xind_key in unsaturated_vnode_xoo_dict.keys():
-            exvnode_x_ccoords = unsaturated_vnode_xoo_dict[exvnode_xind_key][
-                "x_cpoints"]
-            exvnode_oo_ccoords = unsaturated_vnode_xoo_dict[exvnode_xind_key][
-                "oo_cpoints"]
-            node_xoo_ccoords = np.vstack(
-                [exvnode_x_ccoords, exvnode_oo_ccoords])
-            # make the beginning point of the termination to the center of the oo atoms
-            node_oo_center_cvec = np.mean(
-                exvnode_oo_ccoords[:, 2:5].astype(float),
-                axis=0)  # NOTE: modified add the atom type and atom name
-            node_xoo_cvecs = (node_xoo_ccoords[:, 2:5].astype(float) -
-                              node_oo_center_cvec
-                             )  # NOTE: modified add the atom type and atom name
-            node_xoo_cvecs = node_xoo_cvecs.astype("float")
-            # use record to record the rotation matrix for get rid of the repeat calculation
-
-            indices = [
-                index for index, value in enumerate(node_oovecs_record)
-                if is_list_A_in_B(node_xoo_cvecs, value[0])
-            ]
-            if len(indices) == 1:
-                rot = node_oovecs_record[indices[0]][1]
-            else:
-                _, rot, _ = superimpose(self.term_xoovecs, node_xoo_cvecs)
-                node_oovecs_record.append((node_xoo_cvecs, rot))
-            adjusted_term_vecs = np.dot(self.term_coords,
-                                        rot) + node_oo_center_cvec
-            adjusted_term = np.hstack((
-                np.asarray(self.term_info[:, 0:1]),
-                np.asarray(self.term_info[:, 2:3]),
-                adjusted_term_vecs,
-            ))
-            # add the adjusted term to the terms, add index, add the node name
-            unsaturated_vnode_xoo_dict[exvnode_xind_key][
-                "node_term_c_points"] = (adjusted_term)
-            eG.nodes[exvnode_xind_key[0]]["term_c_points"][
-                exvnode_xind_key[1]] = (adjusted_term)
-
-        self.unsaturated_vnode_xoo_dict = unsaturated_vnode_xoo_dict
-        self.eG = eG
-        return eG
-
-    def remove_xoo_from_node(self):
-        """
-        remove the XOO atoms from the node after adding the terminations, add ['noxoo_f_points'] to the node in eG
-        """
-        eG = self.eG
-        xoo_dict = self.xoo_dict
-
-        all_xoo_indices = []
-        for x_ind, oo_ind in xoo_dict.items():
-            all_xoo_indices.append(x_ind)
-            all_xoo_indices.extend(oo_ind)
-
-        for n in eG.nodes():
-            if pname(n) != "EDGE":
-                all_f_points = eG.nodes[n]["f_points"]
-                noxoo_f_points = np.delete(all_f_points,
-                                           all_xoo_indices,
-                                           axis=0)
-                eG.nodes[n]["noxoo_f_points"] = noxoo_f_points
-        self.eG = eG
-
-        return eG
-
-    def get_node_edge_term_grolines(self, eG, sc_unit_cell):
-        nodes_eG, edges_eG, terms_eG, node_res_num, edge_res_num, term_res_num = (
-            extract_node_edge_term(eG, sc_unit_cell))
-        merged_node_edge_term = merge_node_edge_term(nodes_eG, edges_eG,
-                                                     terms_eG, node_res_num,
-                                                     edge_res_num)
-        print("node_res_num: ", node_res_num)
-        print("edge_res_num: ", edge_res_num)
-        print("term_res_num: ", term_res_num)
-        return merged_node_edge_term
-
-    def extract_node_edge_term(self):
-        self.nodes_eG, self.edges_eG, self.terms_eG, self.node_res_num, self.edge_res_num, self.term_res_num = (
-            extract_node_edge_term(self.eG, self.sc_unit_cell))
-        print("node_res_num: ", self.node_res_num)
-        print("edge_res_num: ", self.edge_res_num)
-        print("term_res_num: ", self.term_res_num)
-
-    def write_node_edge_term_gro(self, gro_name):
-        """
-        write the node, edge, term to the gro file
-        """
-
-        merged_node_edge_term = merge_node_edge_term(self.nodes_eG,
-                                                     self.edges_eG,
-                                                     self.terms_eG,
-                                                     self.node_res_num,
-                                                     self.edge_res_num)
-        dir_name = "output_gros"
-        save_node_edge_term_gro(merged_node_edge_term, gro_name, dir_name)
-        print(str(gro_name) + ".gro is saved in folder " + str(dir_name))
-
-        self.merged_node_edge_term = merged_node_edge_term
+def remove_node_by_index(eG, remove_node_list, remove_edge_list):
+    for n in eG.nodes():
+        if pname(n) != "EDGE":
+            if eG.nodes[n]["index"] in remove_node_list:
+                eG.remove_node(n)
+        if pname(n) == "EDGE":
+            if -1 * eG.nodes[n]["index"] in remove_edge_list:
+                eG.remove_node(n)
+    return eG

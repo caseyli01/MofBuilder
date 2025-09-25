@@ -17,21 +17,24 @@ from veloxchem.veloxchemlib import mpi_master
 from veloxchem.errorhandler import assert_msg_critical
 from veloxchem.molecule import Molecule
 
-from ..io.basic import nn, nl,pname,is_list_A_in_B
-from ..utils.geometry import (
-    unit_cell_to_cartesian_matrix, fractional_to_cartesian, cartesian_to_fractional,
-    locate_min_idx, reorthogonalize_matrix, find_optimal_pairings, find_edge_pairings
-)
+from ..io.basic import nn, nl, pname, is_list_A_in_B
+from ..utils.geometry import (unit_cell_to_cartesian_matrix,
+                              fractional_to_cartesian, cartesian_to_fractional,
+                              locate_min_idx, reorthogonalize_matrix,
+                              find_optimal_pairings, find_edge_pairings)
 from .other import fetch_X_atoms_ind_array
 from .superimpose import superimpose_rotation_only
 
+
 class NetOptimizer:
+
     def __init__(self, comm=None, ostream=None):
         self.comm = comm or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.nodes = self.comm.Get_size()
-        self.ostream = ostream or OutputStream(sys.stdout if self.rank == mpi_master() else None)
-        
+        self.ostream = ostream or OutputStream(sys.stdout if self.rank ==
+                                               mpi_master() else None)
+
         #NEED to be set before use
         self.G = None
         self.V_data = None
@@ -56,16 +59,16 @@ class NetOptimizer:
         self.sc_rot_node_X_pos = None
         self.sc_unit_cell = None
         self.sc_unit_cell_inv = None
-        self.constant_length = 1.54 #default C-C single bond length
+        self.constant_length = 1.54  #default C-C single bond length
         self.linker_length = None
 
-        self.load_optimized_rotations = None 
+        self.load_optimized_rotations = None
         self.skip_rotation_optimization = False
         self.rotation_filename = None
 
         # Optimization parameters
         self.opt_drv = OptimizationDriver(comm=self.comm, ostream=self.ostream)
-        self.opt_drv.pname_set_dict = None #to be set later
+        self.opt_drv.pname_set_dict = None  #to be set later
         self.opt_drv.opt_method = 'L-BFGS-B'
         self.opt_drv.maxfun = 15000
         self.opt_drv.maxiter = 15000
@@ -78,10 +81,7 @@ class NetOptimizer:
         self.opt_drv._debug = self._debug
         self.rotation_filename = None
 
-        self.optimized_params = None
-
-
-
+        self.optimized_cell_info = None
         """
         - node_target_type (str):metal atom type of the node
         - node_unit_cell (array):unit cell of the node
@@ -148,8 +148,6 @@ class NetOptimizer:
         - unsaturated_vnode_xoo_dict (dict):unsaturated node and the exposed X connected atom index and the corresponding O connected atoms
         """
 
-
-
     def rotation_and_cell_optimization(self):
         """
         two optimization steps:
@@ -158,24 +156,24 @@ class NetOptimizer:
         """
 
         G = self.G.copy()
-        self.node_x_ccoords = self.V_X_data[:,5:8].astype(float)   
-        self.node_ccoords = self.V_data[:,5:8].astype(float)
-        self.ec_x_ccoords = self.EC_X_data[:,5:8].astype(float) if self.EC_X_data is not None else None
-        self.ec_ccoords = self.EC_data[:,5:8].astype(float) if self.EC_data is not None else None
-        self.e_x_ccoords = self.E_X_data[:,5:8].astype(float) 
-        self.e_ccoords = self.E_data[:,5:8].astype(float)
+        self.node_x_ccoords = self.V_X_data[:, 5:8].astype(float)
+        self.node_ccoords = self.V_data[:, 5:8].astype(float)
+        self.ec_x_ccoords = self.EC_X_data[:, 5:8].astype(
+            float) if self.EC_X_data is not None else None
+        self.ec_ccoords = self.EC_data[:, 5:8].astype(
+            float) if self.EC_data is not None else None
+        self.e_x_ccoords = self.E_X_data[:, 5:8].astype(float)
+        self.e_ccoords = self.E_data[:, 5:8].astype(float)
         self.opt_drv.sorted_nodes = self.sorted_nodes
         self.opt_drv.pname_set_dict = self.pname_set_dict
 
-
-
-
-        node_atom = self.V_data[:,0:2]
-        ec_atom = self.EC_data[:,0:2] if self.EC_data is not None else None
+        node_atom = self.V_data[:, 0:2]
+        ec_atom = self.EC_data[:, 0:2] if self.EC_data is not None else None
 
         linker_length = self.linker_length
         constant_length = self.constant_length
-        x_com_length = np.mean([np.linalg.norm(i) for i in self.node_x_ccoords])
+        x_com_length = np.mean(
+            [np.linalg.norm(i) for i in self.node_x_ccoords])
         # firstly, check if all V nodes have highest connectivity
         # secondly, sort all DV nodes by connectivity
         sorted_nodes = self.sorted_nodes
@@ -188,40 +186,52 @@ class NetOptimizer:
             else:
                 self.nodes_atom[n] = node_atom
 
-       # reindex the nodes in the Xatoms_positions with the index in the sorted_nodes, like G has 16 nodes[2,5,7], but the new dictionary should be [0,1,2]
-        node_pos_dict,node_X_pos_dict = self._generate_pos_dict(G)
+    # reindex the nodes in the Xatoms_positions with the index in the sorted_nodes, like G has 16 nodes[2,5,7], but the new dictionary should be [0,1,2]
+        node_pos_dict, node_X_pos_dict = self._generate_pos_dict(G)
 
         # reindex the edges in the G with the index in the sorted_nodes
-        self.sorted_edges_of_sortednodeidx = [(sorted_nodes.index(e[0]),sorted_nodes.index(e[1])) for e in self.sorted_edges]
+        self.sorted_edges_of_sortednodeidx = [(sorted_nodes.index(e[0]),
+                                               sorted_nodes.index(e[1]))
+                                              for e in self.sorted_edges]
         self.opt_drv.sorted_edges = self.sorted_edges_of_sortednodeidx
         # Optimize rotations
         num_nodes = G.number_of_nodes()
-        pname_set, pname_set_dict = self._generate_pname_set(G, sorted_nodes, node_X_pos_dict)
+        pname_set, pname_set_dict = self._generate_pname_set(
+            G, sorted_nodes, node_X_pos_dict)
         self.pname_set_dict = pname_set_dict
         self.opt_drv.pname_set_dict = pname_set_dict
 
-        node_pos_dict, node_X_pos_dict = self._apply_rot_trans2dict(G, node_pos_dict, node_X_pos_dict)
+        node_pos_dict, node_X_pos_dict = self._apply_rot_trans2dict(
+            G, node_pos_dict, node_X_pos_dict)
         ###3D free rotation
 
+        ini_rot = (np.eye(3, 3).reshape(1, 3, 3).repeat(len(pname_set),
+                                                        axis=0))
 
-        ini_rot = (np.eye(3, 3).reshape(1, 3, 3).repeat(len(pname_set), axis=0))
-
-        if self.load_optimized_rotations is not None and Path(self.load_optimized_rotations).is_file():
+        if self.load_optimized_rotations is not None and Path(
+                self.load_optimized_rotations).is_file():
             #load the saved optimized rotations
             with h5py.File(self.load_optimized_rotations, 'r') as hf:
                 saved_optimized_rotations = hf['optimized_rotations'][:]
                 if self._debug:
-                    self.ostream.print_info(f"Loaded saved optimized rotations from {self.saved_optimized_rotations}")
-                    self.ostream.print_info(f"Loaded saved optimized rotations shape: {self.saved_optimized_rotations.shape}")
-            if not self.skip_rotation_optimization: #load but not skip
-                self.ostream.print_info("use the loaded optimized_rotations from the previous optimization as initial guess")
+                    self.ostream.print_info(
+                        f"Loaded saved optimized rotations from {self.saved_optimized_rotations}"
+                    )
+                    self.ostream.print_info(
+                        f"Loaded saved optimized rotations shape: {self.saved_optimized_rotations.shape}"
+                    )
+            if not self.skip_rotation_optimization:  #load but not skip
+                self.ostream.print_info(
+                    "use the loaded optimized_rotations from the previous optimization as initial guess"
+                )
                 ini_rot = saved_optimized_rotations.reshape(-1, 3, 3)
 
-
         if not self.skip_rotation_optimization:
-        ####TODO: modified for mil53
-            opt_rot_pre, _ = self.opt_drv._optimize_rotations_pre(num_nodes, G, node_X_pos_dict, ini_rot)
-            opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(num_nodes, G, node_X_pos_dict, opt_rot_pre)
+            ####TODO: modified for mil53
+            opt_rot_pre, _ = self.opt_drv._optimize_rotations_pre(
+                num_nodes, G, node_X_pos_dict, ini_rot)
+            opt_rot_aft, _ = self.opt_drv._optimize_rotations_after(
+                num_nodes, G, node_X_pos_dict, opt_rot_pre)
         else:
             opt_rot_aft = saved_optimized_rotations.reshape(-1, 3, 3)
 
@@ -230,77 +240,95 @@ class NetOptimizer:
             with h5py.File(self.rotation_filename, 'w') as hf:
                 hf.create_dataset('optimized_rotations', data=opt_rot_aft)
 
-
         opt_rots = expand_set_rots(pname_set_dict, opt_rot_aft, sorted_nodes)
         # Apply rotations
-        rot_node_pos,_ = self._apply_rot2atoms_pos(opt_rots, G, node_pos_dict)
+        rot_node_pos, _ = self._apply_rot2atoms_pos(opt_rots, G, node_pos_dict)
 
         if self._debug:
-            self.ostream.print_info(f"Optimized Rotations (after optimization): {opt_rots}")
+            self.ostream.print_info(
+                f"Optimized Rotations (after optimization): {opt_rots}")
 
-            def temp_save_xyz():
-                with open("optimized_nodesstructure.xyz", "w") as file:
-                    num_atoms = sum(len(positions) for positions in rot_node_pos.values())
+            def temp_save_xyz(filename, rot_node_pos):
+                with open(filename, "w") as file:
+                    num_atoms = sum(
+                        len(positions) for positions in rot_node_pos.values())
                     file.write(f"{num_atoms}\n")
                     file.write("Optimized structure\n")
                     for node, positions in rot_node_pos.items():
                         for pos in positions:
-                            file.write(f"X{node}   {pos[0]:.8f} {pos[1]:.8f} {pos[2]:.8f}\n")
+                            file.write(
+                                f"X{node}   {pos[0]:.8f} {pos[1]:.8f} {pos[2]:.8f}\n"
+                            )
+
             temp_save_xyz("optimized_nodesstructure.xyz", rot_node_pos)
 
-        rot_node_X_pos_dict, _ = self._apply_rot2atoms_pos(opt_rots, G, node_X_pos_dict)
+        rot_node_X_pos_dict, _ = self._apply_rot2atoms_pos(
+            opt_rots, G, node_X_pos_dict)
 
-        start_node = self.sorted_edges[0][0]  # find_nearest_node_to_beginning_point(G)
-        
+        start_node = self.sorted_edges[0][
+            0]  # find_nearest_node_to_beginning_point(G)
+
         # loop all of the edges in G and get the lengths of the edges, length is the distance between the two nodes ccoords
         edge_lengths, lengths = self._get_edge_lengths(G)
 
-        x_com_length = np.mean([np.linalg.norm(i) for i in self.node_x_ccoords])
+        x_com_length = np.mean(
+            [np.linalg.norm(i) for i in self.node_x_ccoords])
         new_edge_length = self.linker_length + 2 * self.constant_length + 2 * x_com_length
         # update the node ccoords in G by loop edge, start from the start_node, and then update the connected node ccoords by the edge length, and update the next node ccords from the updated node
 
-        new_ccoords, old_ccoords = self._update_node_ccoords(G, edge_lengths, start_node, new_edge_length)
+        new_ccoords, old_ccoords = self._update_node_ccoords(
+            G, edge_lengths, start_node, new_edge_length)
         # exclude the start_node in updated_ccoords and original_ccoords
-        new_ccoords = { k: v for k, v in new_ccoords.items() if k != start_node }
-        old_ccoords = { k: v for k, v in old_ccoords.items() if k != start_node }
+        new_ccoords = {k: v for k, v in new_ccoords.items() if k != start_node}
+        old_ccoords = {k: v for k, v in old_ccoords.items() if k != start_node}
 
         # use optimized_params to update all of nodes ccoords in G, according to the fccoords
-        if self.optimized_params is None:
+        if self.optimized_cell_info is None:
             self.ostream.print_info("-" * 80)
-            self.ostream.print_info("Start to optimize the cell parameters to fit the target MOF cell")
+            self.ostream.print_info(
+                "Start to optimize the cell parameters to fit the target MOF cell"
+            )
             self.ostream.print_info("-" * 80)
 
-            optimized_params = self.opt_drv._optimize_cell_params(self.cell_info, old_ccoords, new_ccoords)
+            optimized_cell_info = self.opt_drv._optimize_cell_params(
+                self.cell_info, old_ccoords, new_ccoords)
 
             self.ostream.print_info("-" * 80)
-            self.ostream.print_info("Finished the cell parameters optimization")
+            self.ostream.print_info(
+                "Finished the cell parameters optimization")
             self.ostream.print_info("-" * 80)
         else:
-            self.ostream.print_info("use the optimized_params from the previous optimization")
-            optimized_params = self.optimized_params
+            self.ostream.print_info(
+                "use the optimized_cell_info from the previous optimization")
+            optimized_cell_info = self.optimized_cell_info
 
         # get scaled unit cell and inverse and sG
-        a, b, c, alpha, beta, gamma = optimized_params
-        sc_unit_cell = unit_cell_to_cartesian_matrix(a, b, c, alpha, beta, gamma)
+        a, b, c, alpha, beta, gamma = optimized_cell_info
+        sc_unit_cell = unit_cell_to_cartesian_matrix(a, b, c, alpha, beta,
+                                                     gamma)
         sc_unit_cell_inv = np.linalg.inv(sc_unit_cell)
-        sG, scaled_ccoords = self._update_ccoords_by_optimized_cell_params(G, optimized_params)
+        sG, scaled_ccoords = self._update_ccoords_by_optimized_cell_params(
+            G, optimized_cell_info)
 
         # update ccoords in sG
         sc_node_pos_dict, sc_node_X_pos_dict = self._generate_pos_dict(sG)
 
         # Apply rotations and translations to the scaled positions in sG
-        sc_node_pos_dict, sc_node_X_pos_dict = self._apply_rot_trans2dict(sG, sc_node_pos_dict, sc_node_X_pos_dict)
-        sc_rot_node_pos,_ = self._apply_rot2atoms_pos(opt_rots, sG, sc_node_pos_dict)
-        sc_rot_node_X_pos, self.optimized_pair = self._apply_rot2atoms_pos(opt_rots, sG, sc_node_X_pos_dict)
-        
+        sc_node_pos_dict, sc_node_X_pos_dict = self._apply_rot_trans2dict(
+            sG, sc_node_pos_dict, sc_node_X_pos_dict)
+        sc_rot_node_pos, _ = self._apply_rot2atoms_pos(opt_rots, sG,
+                                                       sc_node_pos_dict)
+        sc_rot_node_X_pos, self.optimized_pair = self._apply_rot2atoms_pos(
+            opt_rots, sG, sc_node_X_pos_dict)
+
         # Save results to XYZ
         if self._debug:
-            temp_save_xyz("scaled_optimized_nodesstructure.xyz", sc_rot_node_pos)
+            temp_save_xyz("scaled_optimized_nodesstructure.xyz",
+                          sc_rot_node_pos)
 
         self.opt_rots = opt_rots
-        self.opt_params = optimized_params
+        self.optimized_cell_info = optimized_cell_info
         self.new_edge_length = new_edge_length
-
 
         self.sG = sG
         self.sc_node_pos_dict = sc_node_pos_dict
@@ -309,13 +337,10 @@ class NetOptimizer:
         self.sc_unit_cell = sc_unit_cell
         self.sc_unit_cell_inv = sc_unit_cell_inv
 
-  
         self.rotated_node_positions = rot_node_pos
         self.Xatoms_positions_dict = node_X_pos_dict
         self.node_pos_dict = node_pos_dict
 
-        
-    
     def place_edge_in_net(self):
         """
         based on the optimized rotations and cell parameters, use optimized pair to find connected X-X pair in optimized cell,
@@ -326,7 +351,7 @@ class NetOptimizer:
         """
         # linker_middle_point = np.mean(linker_x_vecs,axis=0)
         e_xx_vec = self.e_x_ccoords
-        self.e_atom = self.E_data[:,0:2]
+        self.e_atom = self.E_data[:, 0:2]
         linker_length = self.linker_length
         optimized_pair = self.optimized_pair
         scaled_rotated_Xatoms_positions = self.sc_rot_node_X_pos
@@ -335,7 +360,6 @@ class NetOptimizer:
         sG = self.sG.copy()
         sc_unit_cell_inv = self.sc_unit_cell_inv
         nodes_atom = self.nodes_atom
-
 
         scalar = (linker_length + 2 * self.constant_length) / linker_length
         extended_e_xx_vec = [i * scalar for i in e_xx_vec]
@@ -355,12 +379,19 @@ class NetOptimizer:
             norm_xx_vector = xx_vector / np.linalg.norm(xx_vector)
 
             if self._debug:
-                self.ostream.print_info(f"Placing edge between Node {i} and Node {j}")
-                self.ostream.print_info(f"  X atom index in Node {i}: {x_idx_i}, coordinates: {x_i}")
-                self.ostream.print_info(f"  X atom index in Node {j}: {x_idx_j}, coordinates: {x_j}")
-                self.ostream.print_info(f"  Middle point: {x_i_x_j_middle_point}")
+                self.ostream.print_info(
+                    f"Placing edge between Node {i} and Node {j}")
+                self.ostream.print_info(
+                    f"  X atom index in Node {i}: {x_idx_i}, coordinates: {x_i}"
+                )
+                self.ostream.print_info(
+                    f"  X atom index in Node {j}: {x_idx_j}, coordinates: {x_j}"
+                )
+                self.ostream.print_info(
+                    f"  Middle point: {x_i_x_j_middle_point}")
                 self.ostream.print_info(f"  Original XX vector: {xx_vector}")
-                self.ostream.print_info(f"  Normalized XX vector: {norm_xx_vector}")
+                self.ostream.print_info(
+                    f"  Normalized XX vector: {norm_xx_vector}")
                 self.ostream.flush()
             # use superimpose to get the rotation matrix
             # use record to record the rotation matrix for get rid of the repeat calculation
@@ -413,37 +444,41 @@ class NetOptimizer:
             sG.edges[(i, j)]["f_points"] = np.hstack((
                 placed_edge[:, 0:2],
                 cartesian_to_fractional(placed_edge[:, 2:5], sc_unit_cell_inv),
-            ))  
+            ))
 
             _, sG.edges[(i, j)]["x_coords"] = fetch_X_atoms_ind_array(
                 placed_edge, 0, "X")
         for i, v in scaled_rotated_node_positions.items():
             k = sorted_nodes[i]
-            pos = v[:,1:] #cause first column is index added by addidx
+            pos = v[:, 1:]  #cause first column is index added by addidx
             sG.nodes[k]["c_points"] = np.hstack((nodes_atom[k], pos))
             sG.nodes[k]["f_points"] = np.hstack(
-                (nodes_atom[k], cartesian_to_fractional(pos, sc_unit_cell_inv)))
+                (nodes_atom[k], cartesian_to_fractional(pos,
+                                                        sc_unit_cell_inv)))
             # find the atoms starts with "x" and extract the coordinates
             _, sG.nodes[k]["x_coords"] = fetch_X_atoms_ind_array(
                 sG.nodes[k]["c_points"], 0, "X")
         self.sG = sG
         return sG
-    
+
     def _get_edge_lengths(self, G):
         edge_lengths = {}
         lengths = []
         for e in G.edges():
             i, j = e
-            length = np.linalg.norm(G.nodes[i]["ccoords"] - G.nodes[j]["ccoords"])
+            length = np.linalg.norm(G.nodes[i]["ccoords"] -
+                                    G.nodes[j]["ccoords"])
             length = np.round(length, 3)
             edge_lengths[(i, j)] = length
             edge_lengths[(j, i)] = length
             lengths.append(length)
         if self._debug:
             self.ostream.print_info(f"Edge lengths: {edge_lengths}")
-            self.ostream.print_info(f"Set of unique edge lengths: {set(lengths)}")
+            self.ostream.print_info(
+                f"Set of unique edge lengths: {set(lengths)}")
         if len(set(lengths)) != 1:
-            self.ostream.print_warning("Warning: more than one type of edge length")
+            self.ostream.print_warning(
+                "Warning: more than one type of edge length")
             # if the length are close, which can be shown by std
             if np.std(lengths) < 0.1:
                 self.ostream.print_info("the edge lengths are close")
@@ -482,23 +517,28 @@ class NetOptimizer:
             translated_positions = original_positions - com
             rotated_translated_positions = np.dot(translated_positions, R.T)
             rotated_positions[i][:, 1:] = rotated_translated_positions + com
-        edge_pair = find_edge_pairings(sorted_nodes, sorted_edges_of_sortednodeidx,
-                                    rotated_positions)
+        edge_pair = find_edge_pairings(sorted_nodes,
+                                       sorted_edges_of_sortednodeidx,
+                                       rotated_positions)
         if self._debug:
-            self.ostream.print_info(f"Optimized Pairings (after optimization): {edge_pair}")
+            self.ostream.print_info(
+                f"Optimized Pairings (after optimization): {edge_pair}")
 
         optimized_pair = {}
         for (i, j), pair in edge_pair.items():
             if self._debug:
-                self.ostream.print_info(f"Node {sorted_nodes[i]} and Node {sorted_nodes[j]}:")
+                self.ostream.print_info(
+                    f"Node {sorted_nodes[i]} and Node {sorted_nodes[j]}:")
             idx_i, idx_j = pair
 
             if self._debug:
-                self.ostream.print_info(f"Node{sorted_nodes[i]}_{int(idx_i)} -- Node{sorted_nodes[j]}_{int(idx_j)}")
-            optimized_pair[sorted_nodes[i], sorted_nodes[j]] = (int(idx_i), int(idx_j))
+                self.ostream.print_info(
+                    f"Node{sorted_nodes[i]}_{int(idx_i)} -- Node{sorted_nodes[j]}_{int(idx_j)}"
+                )
+            optimized_pair[sorted_nodes[i],
+                           sorted_nodes[j]] = (int(idx_i), int(idx_j))
 
         return rotated_positions, optimized_pair
-
 
     def _generate_pos_dict(self, sG):
         ec_x_ccoords = self.ec_x_ccoords
@@ -506,6 +546,7 @@ class NetOptimizer:
         node_x_ccoords = self.node_x_ccoords
         node_ccoords = self.node_ccoords
         sorted_nodes = self.sorted_nodes
+
         def addidx(array):
             row_indices = np.arange(array.shape[0]).reshape(-1, 1).astype(int)
             new_array = np.hstack((row_indices, array))
@@ -515,12 +556,16 @@ class NetOptimizer:
         sc_node_X_pos_dict = {}
         for n in sorted_nodes:
             if "CV" in n:
-                sc_node_X_pos_dict[sorted_nodes.index(n)] = addidx(sG.nodes[n]["ccoords"] + ec_x_ccoords)
-                sc_node_pos_dict[sorted_nodes.index(n)] = addidx(sG.nodes[n]["ccoords"] + ec_ccoords)
+                sc_node_X_pos_dict[sorted_nodes.index(n)] = addidx(
+                    sG.nodes[n]["ccoords"] + ec_x_ccoords)
+                sc_node_pos_dict[sorted_nodes.index(n)] = addidx(
+                    sG.nodes[n]["ccoords"] + ec_ccoords)
             else:
-                sc_node_X_pos_dict[sorted_nodes.index(n)] = addidx(sG.nodes[n]["ccoords"] + node_x_ccoords)
-                sc_node_pos_dict[sorted_nodes.index(n)] = addidx(sG.nodes[n]["ccoords"] + node_ccoords)
-        return sc_node_pos_dict,sc_node_X_pos_dict
+                sc_node_X_pos_dict[sorted_nodes.index(n)] = addidx(
+                    sG.nodes[n]["ccoords"] + node_x_ccoords)
+                sc_node_pos_dict[sorted_nodes.index(n)] = addidx(
+                    sG.nodes[n]["ccoords"] + node_ccoords)
+        return sc_node_pos_dict, sc_node_X_pos_dict
 
     def _apply_rot_trans2dict(self, sG, sc_node_pos_dict, sc_node_X_pos_dict):
         sorted_nodes = self.sorted_nodes
@@ -531,15 +576,13 @@ class NetOptimizer:
             for k in pname_set_dict[p_name]["ind_ofsortednodes"]:
                 node = sorted_nodes[k]
                 sc_node_X_pos_dict[k][:, 1:] = (np.dot(
-                    sc_node_X_pos_dict[k][:, 1:] -
-                    sG.nodes[node]["ccoords"],
+                    sc_node_X_pos_dict[k][:, 1:] - sG.nodes[node]["ccoords"],
                     rot,
                 ) + trans + sG.nodes[node]["ccoords"])
 
                 sc_node_pos_dict[k][:, 1:] = (np.dot(
                     sc_node_pos_dict[k][:, 1:] - sG.nodes[node]["ccoords"],
                     rot) + trans + sG.nodes[node]["ccoords"])
-
 
         return sc_node_pos_dict, sc_node_X_pos_dict
 
@@ -548,21 +591,26 @@ class NetOptimizer:
         pname_set = set(pname_list)
         pname_set_dict = {}
         for n in pname_set:
-            pname_set_dict[n] = {"ind_ofsortednodes": [],}
+            pname_set_dict[n] = {
+                "ind_ofsortednodes": [],
+            }
         for i, node in enumerate(sorted_nodes):
             pname_set_dict[pname(node)]["ind_ofsortednodes"].append(i)
             if len(pname_set_dict[pname(node)]
                    ["ind_ofsortednodes"]) == 1:  # first node
-                pname_set_dict[pname(node)]["rot_trans"] = get_rot_trans_matrix(
-                    node, G, sorted_nodes,node_X_pos_dict)  # initial guess
+                pname_set_dict[pname(
+                    node)]["rot_trans"] = get_rot_trans_matrix(
+                        node, G, sorted_nodes,
+                        node_X_pos_dict)  # initial guess
 
         if self._debug:
             self.ostream.print_info(f"sorted_nodes: {sorted_nodes} ")
             self.ostream.print_info(f"pname_set: {pname_set}")
             self.ostream.print_info(f"pname_set_dict: {pname_set_dict}")
-        return pname_set,pname_set_dict
-    
-    def _update_node_ccoords(self,G, edge_lengths, start_node, new_edge_length):
+        return pname_set, pname_set_dict
+
+    def _update_node_ccoords(self, G, edge_lengths, start_node,
+                             new_edge_length):
         updated_ccoords = {}
         original_ccoords = {}
         updated_ccoords[start_node] = G.nodes[start_node]["ccoords"]
@@ -592,18 +640,19 @@ class NetOptimizer:
         updated_ccoords = {}
         for n in sG.nodes():
             updated_ccoords[n] = fractional_to_cartesian(
-                T_unitcell, sG.nodes[n]["fcoords"].T
-            ).T
+                T_unitcell, sG.nodes[n]["fcoords"].T).T
             sG.nodes[n]["ccoords"] = updated_ccoords[n]
         return sG, updated_ccoords
 
 
 class OptimizationDriver:
+
     def __init__(self, comm=None, ostream=None):
         self.comm = comm or MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
         self.nodes = self.comm.Get_size()
-        self.ostream = ostream or OutputStream(sys.stdout if self.rank == mpi_master() else None)
+        self.ostream = ostream or OutputStream(sys.stdout if self.rank ==
+                                               mpi_master() else None)
 
         # attributes to be set before use
         self.sorted_nodes = None
@@ -626,10 +675,6 @@ class OptimizationDriver:
 
         self._debug = False
 
-
-
-
-
     def _objective_function_pre(self, params, G, static_atom_positions):
         """
         Objective function to minimize distances between paired node to paired node_com along edges.
@@ -649,10 +694,10 @@ class OptimizationDriver:
         sorted_edges = self.sorted_edges
         pname_set_dict = self.pname_set_dict
         set_rotation_matrices = params.reshape(len(pname_set_dict), 3, 3)
-        rotation_matrices = expand_set_rots(pname_set_dict, set_rotation_matrices, sorted_nodes)
+        rotation_matrices = expand_set_rots(pname_set_dict,
+                                            set_rotation_matrices,
+                                            sorted_nodes)
         total_distance = 0.0
-
-        
 
         for i, j in sorted_edges:
             R_i = reorthogonalize_matrix(rotation_matrices[i])
@@ -671,13 +716,11 @@ class OptimizationDriver:
             if np.argmin(dist_matrix) > 1:
                 total_distance += 1e4  # penalty for the distance difference
             total_distance += np.min(dist_matrix)**2
-    
 
             total_distance += 1e3 / (np.max(dist_matrix) - np.min(dist_matrix)
-                                    )  # reward for the distance difference
+                                     )  # reward for the distance difference
 
         return total_distance
-
 
     def _objective_function_after(self, params, G, static_atom_positions):
         """
@@ -694,8 +737,9 @@ class OptimizationDriver:
         """
         # num_nodes = len(G.nodes())
         set_rotation_matrices = params.reshape(len(self.pname_set_dict), 3, 3)
-        rotation_matrices = expand_set_rots(self.pname_set_dict, set_rotation_matrices,
-                                        self.sorted_nodes)
+        rotation_matrices = expand_set_rots(self.pname_set_dict,
+                                            set_rotation_matrices,
+                                            self.sorted_nodes)
         total_distance = 0.0
 
         for i, j in self.sorted_edges:
@@ -716,7 +760,7 @@ class OptimizationDriver:
             for idx_i in range(len(rotated_i_positions)):
                 for idx_j in range(len(rotated_j_positions)):
                     dist = np.linalg.norm(rotated_i_positions[idx_i] -
-                                        rotated_j_positions[idx_j])
+                                          rotated_j_positions[idx_j])
                     dist_matrix[idx_i, idx_j] = dist
 
             if np.argmin(dist_matrix) > 1:
@@ -726,9 +770,8 @@ class OptimizationDriver:
 
         return total_distance
 
-
-
-    def _optimize_rotations_pre(self,num_nodes, G, atom_positions, initial_set_rotations):
+    def _optimize_rotations_pre(self, num_nodes, G, atom_positions,
+                                initial_set_rotations):
         """
         Optimize rotations for all nodes in the graph.
 
@@ -743,9 +786,6 @@ class OptimizationDriver:
         assert_msg_critical("scipy" in sys.modules,
                             "scipy is required for optimize_rotations_pre.")
 
-
-
-        
         self.ostream.print_info(f"Rotations optimization information:")
         self.ostream.print_info(f"opt_method:, {self.opt_method}")
         self.ostream.print_info(f"maxfun:, {self.maxfun}")
@@ -759,14 +799,12 @@ class OptimizationDriver:
         self.ostream.print_info(f"Rotation Optimization (stage 1)")
         self.ostream.flush()
 
-        
         # initial_rotations = np.tile(np.eye(3), (num_nodes, 1)).flatten()
         # get a better initial guess, use random rotation matrix combination
         # initial_rotations  = np.array([reorthogonalize_matrix(np.random.rand(3,3)) for i in range(num_nodes)]).flatten()
         static_atom_positions = atom_positions.copy()
         # Precompute edge-specific pairings
         # edge_pairings = find_edge_pairings(sorted_edges, atom_positions).
-
 
         result = minimize(
             self._objective_function_pre,
@@ -787,8 +825,8 @@ class OptimizationDriver:
 
         return optimized_rotations, static_atom_positions
 
-
-    def _optimize_rotations_after(self, num_nodes, G, atom_positions, initial_rotations):
+    def _optimize_rotations_after(self, num_nodes, G, atom_positions,
+                                  initial_rotations):
         """
         Optimize rotations for all nodes in the graph.
 
@@ -835,40 +873,38 @@ class OptimizationDriver:
 
         return optimized_rotations, static_atom_positions
 
-
-    def _scale_objective_function(self, params, old_cell_params, old_cartesian_coords,
-                             new_cartesian_coords):
+    def _scale_objective_function(self, params, old_cell_params,
+                                  old_cartesian_coords, new_cartesian_coords):
         a_new, b_new, c_new, _, _, _ = params
         a_old, b_old, c_old, alpha_old, beta_old, gamma_old = old_cell_params
 
         # Compute transformation matrix for the old unit cell, T is the unit cell matrix
         T_old = unit_cell_to_cartesian_matrix(a_old, b_old, c_old, alpha_old,
-                                            beta_old, gamma_old)
+                                              beta_old, gamma_old)
         T_old_inv = np.linalg.inv(T_old)
-        old_fractional_coords = cartesian_to_fractional(old_cartesian_coords,
-                                                        T_old_inv)
+        old_fractional_coords = cartesian_to_fractional(
+            old_cartesian_coords, T_old_inv)
 
         # backup
         # old_fractional_coords = cartesian_to_fractional(old_cartesian_coords,T_old_inv)
 
         # Compute transformation matrix for the new unit cell
         T_new = unit_cell_to_cartesian_matrix(a_new, b_new, c_new, alpha_old,
-                                            beta_old, gamma_old)
+                                              beta_old, gamma_old)
         T_new_inv = np.linalg.inv(T_new)
 
         # Convert the new Cartesian coordinates to fractional coordinate using the old unit cell
 
         # Recalculate fractional coordinates from updated Cartesian coordinates
-        new_fractional_coords = cartesian_to_fractional(new_cartesian_coords,
-                                                        T_new_inv)
+        new_fractional_coords = cartesian_to_fractional(
+            new_cartesian_coords, T_new_inv)
 
         # Compute difference from original fractional coordinates
         diff = new_fractional_coords - old_fractional_coords
         return np.sum(diff**2)  # Sum of squared differences
 
-
- 
-    def _optimize_cell_params(self, cell_info, original_ccoords, updated_ccoords):
+    def _optimize_cell_params(self, cell_info, original_ccoords,
+                              updated_ccoords):
 
         assert_msg_critical("scipy" in sys.modules,
                             "scipy is required for optimize_cell_parameters.")
@@ -900,11 +936,11 @@ class OptimizationDriver:
 
         # Extract optimized parameters
         optimized_params = np.round(result.x, 5)
-        self.ostream.print_info(f"Optimized New Cell Parameters: {optimized_params}\nTemplate Cell Parameters: {cell_info}")
+        self.ostream.print_info(
+            f"Optimized New Cell Parameters: {optimized_params}\nTemplate Cell Parameters: {cell_info}"
+        )
 
         return optimized_params
-
-
 
     # use optimized_params to update all of nodes ccoords in G, according to the fccoords
     def _update_ccoords_by_optimized_cell_params(self, G, optimized_params):
@@ -913,13 +949,10 @@ class OptimizationDriver:
         T_unitcell = unit_cell_to_cartesian_matrix(a, b, c, alpha, beta, gamma)
         updated_ccoords = {}
         for n in sG.nodes():
-            updated_ccoords[n] = fractional_to_cartesian(T_unitcell,
-                                                        sG.nodes[n]["fcoords"].T).T
+            updated_ccoords[n] = fractional_to_cartesian(
+                T_unitcell, sG.nodes[n]["fcoords"].T).T
             sG.nodes[n]["ccoords"] = updated_ccoords[n]
         return sG, updated_ccoords
-
-
-    
 
 
 def recenter_and_norm_vectors(vectors, extra_mass_center=None):
@@ -950,18 +983,16 @@ def get_rot_trans_matrix(node, G, sorted_nodes, Xatoms_positions_dict):
     _, rot, tran = superimpose_rotation_only(vecsA, vecsB)
     return rot, tran
 
+
 def expand_set_rots(pname_set_dict, set_rotations, sorted_nodes):
-        """
+    """
         Expand set rotations to all nodes based on the set dictionary.
         """
-        set_rotations = set_rotations.reshape(len(pname_set_dict), 3, 3)
-        rotations = np.empty((len(sorted_nodes), 3, 3))
-        idx = 0
-        for name in pname_set_dict:
-            for k in pname_set_dict[name]["ind_ofsortednodes"]:
-                rotations[k] = set_rotations[idx]
-            idx += 1
-        return rotations
-    
-
-
+    set_rotations = set_rotations.reshape(len(pname_set_dict), 3, 3)
+    rotations = np.empty((len(sorted_nodes), 3, 3))
+    idx = 0
+    for name in pname_set_dict:
+        for k in pname_set_dict[name]["ind_ofsortednodes"]:
+            rotations[k] = set_rotations[idx]
+        idx += 1
+    return rotations
