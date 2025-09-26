@@ -76,7 +76,7 @@ class GroWriter:
                 formatted_line = "%5d%-5s%5s%5d%8.3f%8.3f%8.3f" % (
                     residue_number,
                     residue_name[:5],
-                    atom_type[:5],
+                    atom_label[:5],
                     atom_number,
                     x,
                     y,

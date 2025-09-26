@@ -7,6 +7,7 @@ from veloxchem.environment import get_data_path
 import mpi4py.MPI as MPI
 import sys
 import re
+import time
 
 from ..utils.geometry import (
     unit_cell_to_cartesian_matrix,
@@ -99,7 +100,7 @@ class Framework:
 
         #optimization
         #need to be set by user
-        self.constant_length = 1.34  # X-X bond length in Angstrom, default 1.54A
+        self.constant_length = 1.54  # X-X bond length in Angstrom, default 1.54A
         self.load_optimized_rotations = None #h5 file with optimized rotations
         self.skip_rotation_optimization = False
         self.rotation_filename = None
@@ -466,7 +467,7 @@ if __name__ != "__main__":
     mof.termination_filename = 'methyl'
     mof.node_metal_type = "Zr"
     mof.dummy_atom_node = True
-    mof.constant_length = 1.3
+    mof.constant_length = 1.54
     mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
     mof.read_framework()
     mof.optimize_framework()
@@ -491,7 +492,7 @@ if __name__ != "__main__":
 if __name__ == "__main__":
 
 #another test
-
+    start_time = time.time()
 
     mof = Framework(mof_family="PCN-222")
     mof.data_path = 'tests/database'
@@ -501,15 +502,15 @@ if __name__ == "__main__":
     mof.termination_filename = 'methyl'
     mof.node_metal_type = "Zr"
     mof.dummy_atom_node = True
-    mof.constant_length = 1.3
-    mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
+    mof.constant_length = 1.54
+    #mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
     mof.read_framework()
     mof.optimize_framework()
     mof._debug = True
-    mof.supercell = [2,2,2]
+    mof.supercell = [10,10,10]
 
     mof.make_supercell()
-    mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    #mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     mof.update_node_termination = True
     mof.termination = True
     mof.termination_filename = 'methyl'
@@ -519,7 +520,7 @@ if __name__ == "__main__":
     #mof.exchange_linker_pdbfiles = 'tests/testdata/testlinker.xyz'
     exG=mof.exchange_defects(mof.cleaved_eG)
     mof.write(rmG, format=["xyz","pdb", "gro"])
-    print("done")
+    print(f"done in {time.time() - start_time:.2f} seconds")
     print("done")
 
     #optimize the roations and scale the net of unit cell to fit the linker length

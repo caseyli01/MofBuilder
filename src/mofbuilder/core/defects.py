@@ -50,11 +50,11 @@ class TerminationDefectGenerator:
         self.res_idx2rm = []
         self.matched_vnode_xind = None
         self.xoo_dict = None
-        self.unsaturated_node = None  # list of unsaturated node name
-        self.unsaturated_linker = None  # list of unsaturated linker name
-        self.termination_data = None  # list of termination XOO vectors
-        self.termination_X_data = None  # list of termination X atoms
-        self.termination_Y_data = None  # list of termination Y atoms
+        self.unsaturated_node = []  # list of unsaturated node name
+        self.unsaturated_linker = []  # list of unsaturated linker name
+        self.termination_data = []  # list of termination XOO vectors
+        self.termination_X_data = []  # list of termination X atoms
+        self.termination_Y_data = []  # list of termination Y atoms
 
         self.use_termination = False
 

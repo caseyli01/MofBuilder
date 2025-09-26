@@ -468,7 +468,7 @@ class EdgeGraphBuilder:
         self.supercell = None #same as the supercell in supercellbuilder
 
         #specific buffer range for cleaving the supercell
-        self.custom_fbox = [[0,1],[0,1],[0,1]] #in fractional coordinate
+        self.custom_fbox = None #in fractional coordinate
 
         #will be generated during the process
         self.eG = None
@@ -477,8 +477,8 @@ class EdgeGraphBuilder:
         self.cleaved_nodes = None
         self.matched_vnode_xind = None
         self.xoo_dict = None
-        self.unsaturated_nodes = None
-        self.unsaturated_linkers = None
+        self.unsaturated_nodes = []
+        self.unsaturated_linkers = []
 
     def build_edgeG_from_superG(self):
 
@@ -1011,6 +1011,12 @@ class EdgeGraphBuilder:
         new_eG = eG.copy()
         removed_edges = []
         removed_nodes = []
+
+        if custom_fbox is None:
+            self.cleaved_eG = new_eG.copy()
+            self.cleaved_edges = removed_edges
+            self.cleaved_nodes = removed_nodes
+            return
         custom_fbox= np.array(custom_fbox) # [[xlo,xhi],[ylo,yhi],[zlo,zhi]]
         def check_supercell_box_range(fcoords, supercell, custom_fbox):
             # check if the fcoords is in the supercell box range with buffer
