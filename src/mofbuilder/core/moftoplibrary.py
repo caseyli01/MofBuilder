@@ -42,7 +42,7 @@ class MofTopLibrary:
         self.mof_family = None
         self.node_connectivity = None
         self.node_metal_type = None
-        self.linker_coord_sites = None
+        self.linker_connectivity = None
         self.net_type = None
 
         self._debug = False
@@ -86,7 +86,7 @@ class MofTopLibrary:
     def select_mof_family(self, mof_family):
         self.mof_family = mof_family
         self.node_connectivity = self.mof_top_dict[mof_family]["node_connectivity"]
-        self.linker_coord_sites = self.mof_top_dict[mof_family]["linker_topic"]
+        self.linker_connectivity = self.mof_top_dict[mof_family]["linker_topic"]
         self.net_filename = self.mof_top_dict[mof_family]["topology"] + ".cif"
         # check if template cif exists
         self.ostream.print_info(f"MOF family {mof_family} is selected")
@@ -97,7 +97,7 @@ class MofTopLibrary:
             self.list_mof_family()
             return
         self.ostream.print_info(f"node connectivity: {self.node_connectivity}")
-        self.ostream.print_info(f"linker topic: {self.linker_coord_sites}")
+        self.ostream.print_info(f"linker topic: {self.linker_connectivity}")
         self.ostream.print_info(f"available metal nodes: {self.mof_top_dict[mof_family]['metal']}")
         self.ostream.flush()
         if self.template_directory is None:

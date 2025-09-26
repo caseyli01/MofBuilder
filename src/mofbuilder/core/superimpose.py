@@ -26,21 +26,46 @@ def match_vectors(arr1, arr2, num):
 
     return closest_vectors_arr1, closest_vectors_arr2
 
-def superimpose(arr1, arr2, min_rmsd=1e6):
-    arr1 = np.asarray(arr1)
-    arr2 = np.asarray(arr2)
-    m_arr1, m_arr2 = match_vectors(arr1, arr2, min(6, len(arr1), len(arr2)))
+def superimpose(src_arr, target_arr, min_rmsd=1e6):
+    """
+    Find the best rotation and translation that aligns src_arr to target_arr.
+
+    Procedure:
+    - Convert inputs to numpy arrays.
+    - Select up to 6 matching vectors from each set based on distance patterns
+      (using match_vectors). This reduces the search space for correspondences.
+    - Try all permutations of the selected vectors from arr1 and compute the
+      SVD-based superposition against the selected vectors from arr2.
+    - Keep the rotation/translation that yields the smallest RMSD.
+
+    Returns:
+    - min_rmsd: best RMSD found
+    - best_rot: 3x3 rotation matrix
+    - best_tran: translation vector (length 3)
+    """
+    # Ensure inputs are numpy arrays
+    src_arr = np.asarray(src_arr)
+    target_arr = np.asarray(target_arr)
+
+    # Select up to 6 representative vectors from each array to match by distance
+    m_src, m_target = match_vectors(src_arr, target_arr, min(6, len(src_arr), len(target_arr)))
+
+    # Initialize best transformation to identity/no-translation
     best_rot, best_tran = np.eye(3), np.zeros(3)
 
-    for perm in itertools.permutations(m_arr1):
-        rmsd, rot, tran = svd_superimpose(np.asarray(perm), m_arr2)
+    # Try every possible correspondence (permutation) of the selected vectors
+    for perm in itertools.permutations(m_src):
+        # Compute RMSD, rotation and translation for this correspondence
+        rmsd, rot, tran = svd_superimpose(np.asarray(perm), m_target)
+
+        # Keep the transform that gives the smallest RMSD
         if rmsd < min_rmsd:
             min_rmsd, best_rot, best_tran = rmsd, rot, tran
 
     return min_rmsd, best_rot, best_tran
 
 
-def svd_superimpose(inp_arr1, inp_arr2):
+def svd_superimpose(src_arr, target_arr):
     """
     Calculates RMSD and rotation matrix for superimposing two sets of points,
     using SVD. Ref.: "Least-Squares Fitting of Two 3-D Point Sets", IEEE
@@ -48,16 +73,16 @@ def svd_superimpose(inp_arr1, inp_arr2):
     698-700. DOI: 10.1109/TPAMI.1987.4767965
     """
 
-    arr1 = np.array(inp_arr1)
-    arr2 = np.array(inp_arr2)
+    src_arr = np.array(src_arr)
+    target_arr = np.array(target_arr)
 
-    com1 = np.sum(arr1, axis=0) / arr1.shape[0]
-    com2 = np.sum(arr2, axis=0) / arr2.shape[0]
+    com1 = np.sum(src_arr, axis=0) / src_arr.shape[0]
+    com2 = np.sum(target_arr, axis=0) / target_arr.shape[0]
 
-    arr1 -= com1
-    arr2 -= com2
+    src_arr -= com1
+    target_arr -= com2
 
-    cov_mat = np.matmul(arr1.T, arr2)
+    cov_mat = np.matmul(src_arr.T, target_arr)
     U, s, Vt = np.linalg.svd(cov_mat)
 
     rot_mat = np.matmul(U, Vt)
@@ -65,7 +90,7 @@ def svd_superimpose(inp_arr1, inp_arr2):
         Vt[-1, :] *= -1.0
         rot_mat = np.matmul(U, Vt)
 
-    diff = arr2 - np.matmul(arr1, rot_mat)
+    diff = target_arr - np.matmul(src_arr, rot_mat)
     rmsd = np.sqrt(np.sum(diff**2) / diff.shape[0])
     trans = com2 - np.dot(com1, rot_mat)
 

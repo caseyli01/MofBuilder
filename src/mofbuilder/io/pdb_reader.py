@@ -86,12 +86,17 @@ class PdbReader:
             if com_type is None:
                 com_type_ccoords = self.data[:,5:8].astype(float)
             else:
-                com_type_ccoords = self.data[self.data[:,-1]==com_type][:,5:8].astype(float)
+                if com_type not in self.data[:,-1]:
+                    self.ostream.print_warning(f"com_type {com_type} not in the pdb file, use all atoms to calculate com")
+                    com_type_ccoords = self.data[:,5:8].astype(float)
+                else:
+                    com_type_ccoords = self.data[self.data[:,-1]==com_type][:,5:8].astype(float)
             com = np.mean(com_type_ccoords, axis=0)
             if self._debug:
                 self.ostream.print_info(f"Center of mass type {com_type} at {com}")
             self.data[:, 5:8] = self.data[:, 5:8].astype(float) - com
-            
+
+        self.X_data = self.data[self.data[:,-1]=='X']
 
     def expand_arr2data(self, arr):
         #arr type is [atom_type,atom_label,x,y,z]

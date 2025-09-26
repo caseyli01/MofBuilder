@@ -22,7 +22,7 @@ class FrameLinker:
         self.filename = filepath
         self.target_dir = None
         self.new_xyzfilename = None
-        self.linker_coord_sites = 2
+        self.linker_connectivity = 2
         self.pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
         self.pdbwriter = PdbWriter(comm=self.comm, ostream=self.ostream)
         self._debug = False
@@ -47,7 +47,7 @@ class FrameLinker:
             self.ostream.print_info(f"Processing linker file: {self.filename} ...")
         else:
             self.ostream.print_info(f"Processing linker data ...")
-        self.ostream.print_info(f"Linker topic: {self.linker_coord_sites}")
+        self.ostream.print_info(f"Linker topic: {self.linker_connectivity}")
         self.ostream.flush()
 
         if self._debug:
@@ -252,13 +252,14 @@ class FrameLinker:
             rows.append([name, label, coord[0], coord[1], coord[2]])
         return rows, Xs
 
-    def process_linker_molecule(self,molecule, linker_topic):
+    def process_linker_molecule(self,molecule, linker_connectivity):
         """
-        Processes the linker molecule based on the linker_topic and center classification.
+        Processes the linker molecule based on the linker_connectivity and center classification.
         Identifies center nodes, Xs (connection points), fragments, and writes PDB files for each fragment.
         """
-        save_nodes_dir = Path(self.target_dir, "nodes")
-        save_edges_dir = Path(self.target_dir, "edges")
+        if self.save_files:
+            save_nodes_dir = Path(self.target_dir, "nodes")
+            save_edges_dir = Path(self.target_dir, "edges")
         self.molecule_coords = molecule.get_coordinates_in_angstrom()
         self.molecule_labels = molecule.get_labels()
 
@@ -268,17 +269,17 @@ class FrameLinker:
         self._distinguish_G_centers(self.lG)
 
         # For large cycles, reduce center nodes to a pair
-        if linker_topic == 2 and len(self.center_nodes) > 6:
+        if linker_connectivity == 2 and len(self.center_nodes) > 6:
             self.center_nodes = self._find_center_nodes_pair(self.lG, self.center_nodes)
 
         self._classify_nodes()
         if self._debug:
-            self.ostream.print_info(f"Linker topic: {linker_topic}")
+            self.ostream.print_info(f"Linker topic: {linker_connectivity}")
             self.ostream.print_info(f"Center class: {self.center_class}")
             self.ostream.print_info(f"Center nodes: {self.center_nodes}")
 
         # Multitopic linker: center is a cycle
-        if self.center_class == "cycle" and linker_topic > 2:
+        if self.center_class == "cycle" and linker_connectivity > 2:
             if self._debug:
                 self.ostream.print_info(f"tritopic/tetratopic/multitopic: center is a cycle")
             connected_pairXs = {}
@@ -319,7 +320,7 @@ class FrameLinker:
                         innerX_coords.append(self.lG.nodes[inner_X[0]]["coords"])
 
             if (nx.number_connected_components(self.lG)
-                    != linker_topic + 1):  # for check linker_topics+1
+                    != linker_connectivity + 1):  # for check linker_connectivitys+1
                 self.ostream.print_warning(f"wrong fragments")
                 raise ValueError
 
@@ -327,7 +328,7 @@ class FrameLinker:
             self.innerX_coords = innerX_coords
             self.connected_pairXs = connected_pairXs
 
-        elif self.linker_coord_sites == 2:
+        elif self.linker_connectivity == 2:
             if self.center_class == "twopoints":
                 if self._debug:
                     self.ostream.print_info(f"ditopic linker: center are two points")
@@ -420,13 +421,13 @@ class FrameLinker:
                             if adj_nonH_num > 2:
                                 self.Xs_indices.append(n)
                     #double check Xs_indices
-                    if len(self.Xs_indices) > self.linker_coord_sites:
+                    if len(self.Xs_indices) > self.linker_connectivity:
                         #cut bond connected to Xs_indices and if there is a fragment include H then should exclude this Xs
                         #use lG fragment
                         for x in self.Xs_indices:
                             lG_temp = self.lG.copy()
                             lG_temp.remove_node(x)
-                            if nx.number_connected_components(lG_temp) == self.linker_coord_sites:
+                            if nx.number_connected_components(lG_temp) == self.linker_connectivity:
                                 frags = list(nx.connected_components(lG_temp))
                                 #sort frags by size
                                 frags.sort(key=len)
@@ -450,7 +451,7 @@ class FrameLinker:
             )
 
         # write pdb files
-        if self.linker_coord_sites > 2:  # multitopic
+        if self.linker_connectivity > 2:  # multitopic
             frag_nodes = list(
                 sorted(nx.connected_components(self.lG), key=len, reverse=True))
             for f in frag_nodes:
@@ -463,10 +464,6 @@ class FrameLinker:
                 self.ostream.print_info(f"outer_frag_nodes: {outer_frag_nodes}")
             self.subgraph_center_frag = self.lG.subgraph(center_frag_nodes)
             self._lines_of_center_frag()
-            # center_frag_bonds = get_bonds_from_subgraph(subgraph_center_frag, Xs_indices)
-            # subgraph_center_frag_edges = list(subgraph_center_frag.edges)
-            # plot2dedge(lG,coords,subgraph_center_frag_edges,True)
-            # plot2dedge(lG,coords,subgraph_center_frag_edges,False)
             self.pairXs = self._get_pairX_outer_frag(connected_pairXs, outer_frag_nodes)
             self.subgraph_single_frag = self._cleave_outer_frag_subgraph(
                 self.lG, self.pairXs, outer_frag_nodes)
@@ -475,8 +472,7 @@ class FrameLinker:
             self.rows, self.frag_Xs = self._lines_of_single_frag(self.subgraph_single_frag, self.Xs_indices)
             if self._debug:
                 self.ostream.print_info(f"subgraph_single_frag nodes: {self.subgraph_single_frag.nodes}")
-            # single_frag_bonds = get_bonds_from_subgraph(subgraph_single_frag, Xs_indices)
-            if linker_topic == 3:
+            if linker_connectivity == 3:
                 if self._debug:
                     self.ostream.print_info(f"linker_center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"linker_outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
@@ -485,17 +481,8 @@ class FrameLinker:
                     self.create_pdb(linker_center_node_pdb_name, self.lines)
                     linker_branch_pdb_name = str(Path(save_edges_dir, "triedge"))
                     self.create_pdb(linker_branch_pdb_name, self.rows)
-                # create_cif(lines,center_frag_bonds,save_nodes_dir,'tricenter.cif')
-                # create_cif(rows,single_frag_bonds,save_edges_dir,'triedge.cif')
-                #return (
-                #    self.subgraph_center_frag.number_of_nodes(),
-                #    self.center_Xs,
-                #    self.subgraph_single_frag.number_of_nodes(),
-                #    self.frag_Xs,
-                #    linker_center_node_pdb_name + ".pdb",
-                #    linker_branch_pdb_name + ".pdb",
-                #)
-            elif linker_topic == 4:
+
+            elif linker_connectivity == 4:
                 if self._debug:
                     self.ostream.print_info(f"center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
                     self.ostream.print_info(f"outer_frag: {self.subgraph_single_frag.number_of_nodes()}, {self.frag_Xs}")
@@ -504,16 +491,7 @@ class FrameLinker:
                     self.create_pdb(linker_center_node_pdb_name, self.lines)
                     linker_branch_pdb_name = str(Path(save_edges_dir, "tetraedge"))
                     self.create_pdb(linker_branch_pdb_name, self.rows)
-                # create_cif(lines,center_frag_bonds,save_nodes_dir,'tetracenter.cif')
-                # create_cif(rows,single_frag_bonds,save_edges_dir,'tetraedge.cif')
-                #return (
-                #    self.subgraph_center_frag.number_of_nodes(),
-                #    self.center_Xs,
-                #    self.subgraph_single_frag.number_of_nodes(),
-                #    self.frag_Xs,
-                #    linker_center_node_pdb_name + ".pdb",
-                #    linker_branch_pdb_name + ".pdb",
-                #)
+
             else:
                 linker_center_node_pdb_name = str(
                     Path(save_nodes_dir, "multicenter"))
@@ -521,41 +499,21 @@ class FrameLinker:
                     self.create_pdb(linker_center_node_pdb_name, self.lines)
                     linker_branch_pdb_name = str(Path(save_edges_dir, "multiedge"))
                     self.create_pdb(linker_branch_pdb_name, self.rows)
-                # create_cif(lines,center_frag_bonds,'nodes','multicenter.cif')
-                # create_cif(rows,single_frag_bonds,'edges','multiedge.cif')
-                #return (
-                #    self.subgraph_center_frag.number_of_nodes(),
-                #    self.center_Xs,
-                #    self.subgraph_single_frag.number_of_nodes(),
-                #    self.frag_Xs,
-                #    linker_center_node_pdb_name + ".pdb",
-                #    linker_branch_pdb_name + ".pdb",
-                #)
 
-        elif linker_topic == 2:  # ditopic
+
+        elif linker_connectivity == 2:  # ditopic
             pairXs = Xs_indices
             if self._debug:
                 self.ostream.print_info(f"pairXs: {pairXs}")
             self.subgraph_center_frag = self._cleave_outer_frag_subgraph(self.lG, pairXs, self.lG.nodes)
-            # subgraph_center_frag_edges = list(subgraph_center_frag.edges)
-            # plot2dedge(lG,coords,subgraph_center_frag_edges,True)
-            # plot2dedge(subgraph_center_frag,coords,subgraph_center_frag_edges,False)
             self._lines_of_center_frag()
-            # center_frag_bonds = get_bonds_from_subgraph(subgraph_center_frag, Xs_indices)
-            # create_cif(lines,center_frag_bonds,'edges','diedge.cif')
+
             if self.save_files:
                 edge_pdb_name = str(Path(save_edges_dir, "diedge"))
                 self.create_pdb(edge_pdb_name, self.lines)
             if self._debug:
                 self.ostream.print_info(f"linker_center_frag: {self.subgraph_center_frag.number_of_nodes()}, {self.center_Xs}")
-            #return (
-            #    self.subgraph_center_frag.number_of_nodes(),
-            #    self.center_Xs,
-            #    0,
-            #    [],
-            #    None,
-            #    edge_pdb_name + ".pdb",
-            #)
+
 
 
 
@@ -563,7 +521,7 @@ class FrameLinker:
     def create(self, molecule=None):
         if self.save_files:
             assert_msg_critical(self.target_dir is not None, "Linker: target_dir is not set. Please set the target directory.")
-        assert_msg_critical(self.linker_coord_sites in [2, 3, 4] or self.linker_coord_sites > 4, "Linker: linker_topic should be 2, 3, 4 or >4.")
+        #assert_msg_critical(self.linker_connectivity in [2, 3, 4] or int(self.linker_connectivity) > 4, "Linker: linker_connectivity should be 2, 3, 4 or >4.")
 
         if molecule is None:
             assert_msg_critical(self.filename is not None, "Linker: filename is not set. Please set the filename of the linker molecule.")
@@ -573,7 +531,7 @@ class FrameLinker:
             self.check_dirs(passfilecheck=True)
             self.molecule = molecule
 
-        self.process_linker_molecule(self.molecule, self.linker_coord_sites)
+        self.process_linker_molecule(self.molecule, self.linker_connectivity)
         self.linker_center_data, self.linker_center_X_data = self.pdbreader.expand_arr2data(self.lines)
         self.linker_outer_data, self.linker_outer_X_data = self.pdbreader.expand_arr2data(self.rows)
         self.ostream.print_info("Linker processing completed.")
@@ -584,18 +542,18 @@ class FrameLinker:
 
 if __name__ == "__main__":
     linker_test = FrameLinker()
-    linker_test.linker_coord_sites = 2
+    linker_test.linker_connectivity = 2
     linker_test.filename = "tests/testdata/testlinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     #linker_test._debug = True
     linker_test.create()
 
-    linker_test.linker_coord_sites = 4
+    linker_test.linker_connectivity = 4
     linker_test.filename = "tests/testdata/testtetralinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     linker_test.create()
 
-    linker_test.linker_coord_sites = 3
+    linker_test.linker_connectivity = 3
     linker_test.filename = "tests/testdata/testtrilinker.xyz"
     #linker_test.target_dir = "tests/testoutput"
     linker_test.create()

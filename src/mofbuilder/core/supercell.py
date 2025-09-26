@@ -52,7 +52,7 @@ class SupercellBuilder:
 
         #need to be set before use
         self.sG = None
-        self.linker_coord_sites = None
+        self.linker_connectivity = None
         self.supercell = [1, 1, 1]
         self.cell_info = None #a list of 6 elements, a,b,c,alpha,beta,gamma
 
@@ -67,10 +67,11 @@ class SupercellBuilder:
 
 
     def _is_ditopic_linker(self):
-        return self.linker_coord_sites == 2
+        return self.linker_connectivity == 2
 
     def build_supercellGraph(self):
         self.ostream.print_info("building supercell graph...")
+        self.ostream.flush()
         self.superG_cell_info = [
             self.cell_info[0] * self.supercell[0],
             self.cell_info[1] * self.supercell[1],
@@ -103,12 +104,14 @@ class SupercellBuilder:
         new_superG = self._check_multiedge_bundlings_insuperG(self.super_multiedge_bundlings, superG)
         self.superG = self._check_virtual_edge(new_superG.copy())
         self.ostream.print_info("supercell graph built")
+        self.ostream.flush()
         return self.superG
 
     def _check_virtual_edge(self,supG):
         if self._debug:
             self.ostream.print_info("checking virtual edge for bridge nodes...")
             self.ostream.print_info(f"current edges in superG: {len(supG.edges())}")
+            self.ostream.flush()
       
         if self.add_virtual_edge:
             superG = self._add_virtual_edge(
@@ -120,6 +123,7 @@ class SupercellBuilder:
             if self._debug:
                 self.ostream.print_info("added virtual edge for bridge nodes")
                 self.ostream.print_info(f"current edges in superG after adding virtual edge:{len(superG.edges())}")
+                self.ostream.flush()
         else:
             superG = supG.copy()
         return superG
@@ -177,8 +181,8 @@ class SupercellBuilder:
             for diff_e in diff_ele:
                 diff_e = np.asarray(diff_e)
                 if (pname(n) + "_" + str(lname(n) + diff_e)) in superG.nodes():
-                    print("node already in superG",
-                        pname(n) + "_" + str(lname(n) + diff_e))
+                    self.ostream.print_info(f"node already in superG {pname(n) + '_' + str(lname(n) + diff_e)}")
+                    self.ostream.flush()
                     continue
                 superG.add_node(
                     (pname(n) + "_" + str(lname(n) + diff_e)),
@@ -221,7 +225,7 @@ class SupercellBuilder:
                         f_points=np.hstack((
                             sG.edges[e]["f_points"][:, 0:2],
                             sG.edges[e]["f_points"][:, 2:5].astype(float) + i,
-                        )),  # NOTE:modified because of extra column of atom type
+                        )),  
                         fcoords=sG.edges[e]["fcoords"] + i,
                         type=sG.edges[e]["type"],
                     )
@@ -236,7 +240,7 @@ class SupercellBuilder:
                                     sG.nodes[e[1]]["f_points"][:, 2:5].astype(float)
                                     + i,
                                 )
-                            ),  # NOTE:modified because of extra column of atom type
+                            ), 
                             fcoords=sG.nodes[e[1]]["fcoords"] + i,
                             type="DSV",
                             note=sG.nodes[e[1]]["note"],
@@ -251,7 +255,7 @@ class SupercellBuilder:
                                     sG.nodes[e[0]]["f_points"][:, 2:5].astype(float)
                                     + i,
                                 )
-                            ),  # NOTE:modified because of extra column of atom type
+                            ),  
                             fcoords=sG.nodes[e[0]]["fcoords"] + i,
                             type="DSV",
                             note=sG.nodes[e[0]]["note"],
@@ -269,7 +273,9 @@ class SupercellBuilder:
                     )
 
                 else:
-                    print("edge not in superG", s_edge[0], s_edge[1])
+                    if self._debug:
+                        self.ostream.print_info(f"edge not in superG: {s_edge[0]}, {s_edge[1]}")
+                        self.ostream.flush()
         return superG
     
     ########## the below is to process the multiedge bundling in superG###########
@@ -309,6 +315,7 @@ class SupercellBuilder:
         if self._debug:
             self.ostream.print_info("updating supercell bundle...")
             self.ostream.print_info(f"current nodes number in superG: {len(superG.nodes())}")
+            self.ostream.flush()
         for ec_node in super_multiedge_bundlings.keys():
             con_nodes = super_multiedge_bundlings[ec_node]
             # order the con_nodes by th x-x pair of the ecnode X atoms
@@ -319,31 +326,23 @@ class SupercellBuilder:
                     ec_node,
                     f_points=np.hstack((
                         superG.nodes[prim_ecname]["f_points"]
-                        [:,
-                        0:2],  # NOTE:modified because of extra column of atom type
-                        superG.nodes[prim_ecname]["f_points"][:, 2:5].astype(float)
-                        + trans,
-                    )),  # NOTE:modified because of extra column of atom type
+                        [:, 0:2],
+                        superG.nodes[prim_ecname]["f_points"][:, 2:5].astype(float) + trans)), 
                     fcoords=superG.nodes[prim_ecname]["fcoords"] + trans,
                     type="SV",
                     note=superG.nodes[prim_ecname]["note"],
                 )
             for j in range(len(con_nodes)):
                 cn = con_nodes[j]
-                prim_cnname = super_multiedge_bundlings[prim_ecname][
-                    j]  # find prim_ecname in super_multiedge_bundlings and then get the corresponding prim_cnname
+                prim_cnname = super_multiedge_bundlings[prim_ecname][j]  # find prim_ecname in super_multiedge_bundlings and then get the corresponding prim_cnname
                 trans = lname(cn) - lname(prim_cnname)
                 if cn not in superG.nodes():
                     superG.add_node(
                         cn,
                         f_points=np.hstack((
                             superG.nodes[prim_cnname]["f_points"]
-                            [:, 0:
-                            2],  # NOTE:modified because of extra column of atom type
-                            superG.nodes[prim_cnname]["f_points"][:,
-                                                                2:5].astype(float)
-                            + trans,
-                        )),  # NOTE:modified because of extra column of atom type
+                            [:, 0:2],
+                            superG.nodes[prim_cnname]["f_points"][:, 2:5].astype(float) + trans)),  
                         fcoords=superG.nodes[prim_cnname]["fcoords"] + trans,
                         type="SV",
                         note=superG.nodes[prim_cnname]["note"],
@@ -352,15 +351,9 @@ class SupercellBuilder:
                     ec_node,
                     cn,
                     f_points=np.hstack((
-                        superG.edges[prim_ecname, prim_cnname]["f_points"]
-                        [:,
-                        0:2],  # NOTE:modified because of extra column of atom type
-                        superG.edges[prim_ecname,
-                                    prim_cnname]["f_points"][:, 2:5].astype(float)
-                        + trans,
-                    )),  # NOTE:modified because of extra column of atom type
-                    fcoords=superG.edges[prim_ecname, prim_cnname]["fcoords"] +
-                    trans,
+                        superG.edges[prim_ecname, prim_cnname]["f_points"][:, 0:2],
+                        superG.edges[prim_ecname, prim_cnname]["f_points"][:, 2:5].astype(float) + trans)),
+                    fcoords=superG.edges[prim_ecname, prim_cnname]["fcoords"] + trans,
                     type="DSE",
                 )
 
@@ -376,10 +369,13 @@ class SupercellBuilder:
             if set(cvnodes) == set([i[0] for i in super_multiedge_bundlings_edges]):
                 return superG
             else:
-                print("not all CV nodes in super_multiedge_bundlings_edges")
+                self.ostream.print_info("not all CV nodes in super_multiedge_bundlings_edges")
+                self.ostream.flush()
                 diff_element = set(cvnodes).difference(
                     set(list(super_multiedge_bundlings)))
-                print("to remove diff_element", diff_element)
+                if self._debug:
+                    self.ostream.print_info(f"removing diff_element: {diff_element}")
+                    self.ostream.flush()
                 # remove the diff_element from the superG
                 for n in diff_element:
                     superG.remove_node(n)
@@ -420,7 +416,9 @@ class SupercellBuilder:
                         superG.add_edge(nodes_list[i],
                                         nodes_list[n_j],
                                         type="virtual")
-                        # print('add virtual edge between',nodes_list[i],nodes_list[n_j])
+                        if self._debug:
+                            self.ostream.print_info(f"add virtual edge between {nodes_list[i]}, {nodes_list[n_j]}")
+                            self.ostream.flush()
                         n_n_distance_matrix[i, n_j] = 1000
                         return True, count + 1, n_n_distance_matrix, superG
                     else:
@@ -446,7 +444,9 @@ class SupercellBuilder:
                 self.vir_edge_range,
                 self.vir_edge_max_neighbor,
             )
-            print("add virtual edge")
+            if self._debug():
+                self.ostream.print_info("add virtual edge")
+                self.ostream.flush()
             return add_superG
         else:
             return superG
@@ -463,7 +463,7 @@ class EdgeGraphBuilder:
 
         #need to be set before use
         self.superG = None
-        self.linker_coord_sites = None
+        self.linker_connectivity = None
         self.sc_unit_cell= None #3x3 matrix of the supercell unit cell
         self.supercell = None #same as the supercell in supercellbuilder
 
@@ -483,15 +483,18 @@ class EdgeGraphBuilder:
     def build_edgeG_from_superG(self):
 
         # Build the edge graph (eG) from the supercell graph (superG)
-        if self.linker_coord_sites == 2:
-            eG = self._superG_to_eG_ditopic(self.superG)
+        if self.linker_connectivity == 2:
+            eG, eG_index_name_dict = self._superG_to_eG_ditopic(self.superG)
         else:
-            eG = self._superG_to_eG_multitopic(self.superG, self.sc_unit_cell)
+            eG, eG_index_name_dict = self._superG_to_eG_multitopic(self.superG, self.sc_unit_cell)
+        
+
 
         # only keep the main fragment of the target MOF cell, remove the other fragments, to avoid the disconnected fragments
         self.ostream.print_info("main fragment of the eG kept")
+        self.ostream.flush()    
         self.eG = [eG.subgraph(c).copy() for c in nx.connected_components(eG)][0] #keep the main fragment of the eG
-        if self.linker_coord_sites ==2:
+        if self.linker_connectivity ==2:
             self.eG, unsaturated_linker, self.matched_vnode_xind, self.xoo_dict = self._addxoo2edge_ditopic(
             self.eG, self.sc_unit_cell)
 
@@ -501,6 +504,7 @@ class EdgeGraphBuilder:
 
         #cleave the range of supercell buffer
         self._make_supercell_range_cleaved_eG(self.eG, self.supercell, self.custom_fbox)
+        self.eG_index_name_dict = eG_index_name_dict
         #will generate the cleaved_eG, cleaved_edges, cleaved_nodes
 
 
@@ -516,8 +520,9 @@ class EdgeGraphBuilder:
         - Virtual edges in superG are preserved in the resulting eG.
         """
         eG = nx.Graph()
-        edge_count = 0
-        node_count = 0
+        edge_count = 1 #2n
+        node_count = 0 #2n+1
+        eG_index_name_dict = {}
 
         # First pass: add NODE entries for V nodes and EDGE nodes for CV centers
         for n in superG.nodes():
@@ -525,7 +530,6 @@ class EdgeGraphBuilder:
             note = node_data.get("note")
 
             if note == "V":
-                node_count += 1
                 eG.add_node(
                     n,
                     f_points=node_data.get("f_points"),
@@ -533,10 +537,12 @@ class EdgeGraphBuilder:
                     type=node_data.get("type", "V"),
                     name="NODE",
                     note="V",
-                    index=node_count,
+                    index=2*node_count+1,  # odd indices for NODEs
                 )
                 # keep index on superG for cross-referencing downstream
-                superG.nodes[n]["index"] = node_count
+                superG.nodes[n]["index"] = 2*node_count+1
+                eG_index_name_dict[2*node_count+1] = n # map index to name
+                node_count += 1
 
             elif note == "CV":
                 neighbors = list(superG.neighbors(n))
@@ -558,8 +564,7 @@ class EdgeGraphBuilder:
                     node_data.get("f_points"), merged_edges, len(neighbors), sc_unit_cell
                 )
 
-                edge_count -= 1
-                edge_name = "EDGE_" + str(edge_count)
+                edge_name = "EDGE_" + str(2*edge_count) # EDGE_2, EDGE_4, ...
                 eG.add_node(
                     edge_name,
                     f_points=ec_merged_edges,
@@ -567,12 +572,14 @@ class EdgeGraphBuilder:
                     type="Edge",
                     name="EDGE",
                     note="E",
-                    index=edge_count,
+                    index=2*edge_count,  # even indices for EDGEs
                 )
+                eG_index_name_dict[2*edge_count] = edge_name # map index to name
 
                 # connect EDGE to each neighbor with a 'real' half-edge
                 for nb in neighbors:
-                    eG.add_edge(edge_name, nb, index="E_" + str(edge_count), type="real")
+                    eG.add_edge(edge_name, nb, index="E_" + str(2*edge_count), type="real")
+                edge_count += 1
 
         # Preserve virtual edges present in superG
         for u, v in superG.edges():
@@ -581,7 +588,7 @@ class EdgeGraphBuilder:
                 if not eG.has_edge(u, v):
                     eG.add_edge(u, v, type="virtual")
 
-        return eG
+        return eG, eG_index_name_dict
 
     def _superG_to_eG_ditopic(self, superG):
         """
@@ -596,8 +603,9 @@ class EdgeGraphBuilder:
         """
         eG = nx.Graph()
 
-        edge_count = 0  # will be decremented for EDGE naming (EDGE_-1, EDGE_-2, ...)
-        node_count = 0
+        edge_count = 1  # 2n will be decremented for EDGE naming (EDGE_2, EDGE_4, ...)
+        node_count = 0  # 2n+1 will be incremented for NODE naming (NODE_1, NODE_3, ...)
+        eG_index_name_dict = {}
 
         # Use a set of frozensets to record handled undirected node pairs (fast membership test)
         handled_pairs = set()
@@ -608,7 +616,7 @@ class EdgeGraphBuilder:
                 continue
 
             # Add V node as NODE in eG and store index back to superG for cross-reference
-            node_count += 1
+
             eG.add_node(
                 n,
                 f_points=ndata.get("f_points"),
@@ -616,9 +624,12 @@ class EdgeGraphBuilder:
                 type=ndata.get("type", "V"),
                 note=ndata.get("note"),
                 name="NODE",
-                index=node_count,
+                index=2*node_count+1,
             )
-            superG.nodes[n]["index"] = node_count
+            superG.nodes[n]["index"] = 2*node_count+1
+            eG_index_name_dict[2*node_count+1] = n # map index to name
+
+            node_count += 1
 
             # Process neighbors of this V node
             for ne in superG.neighbors(n):
@@ -637,8 +648,8 @@ class EdgeGraphBuilder:
                 handled_pairs.add(pair_key)
 
                 # Create EDGE node representing this V-V connection
-                edge_count -= 1
-                edge_name = f"EDGE_{edge_count}"
+
+                edge_name = f"EDGE_{2*edge_count}"
                 eG.add_node(
                     edge_name,
                     f_points=edge_data.get("f_points"),
@@ -646,15 +657,17 @@ class EdgeGraphBuilder:
                     type="Edge",
                     name="EDGE",
                     note="E",
-                    index=edge_count,
+                    index=2*edge_count,  # even indices for EDGEs
                 )
+                eG_index_name_dict[2*edge_count] = edge_name # map index to name
 
                 # Preserve the connectivity:
                 # - a 'real' edge between the two original V nodes
                 # - two 'half' edges connecting the EDGE node to each V node
-                eG.add_edge(n, ne, index=f"E_{edge_count}", type="real")
-                eG.add_edge(edge_name, ne, index=f"E_{edge_count}", type="half")
-                eG.add_edge(edge_name, n, index=f"E_{edge_count}", type="half")
+                eG.add_edge(n, ne, index=f"E_{2*edge_count}", type="real")
+                eG.add_edge(edge_name, ne, index=f"E_{2*edge_count}", type="half")
+                eG.add_edge(edge_name, n, index=f"E_{2*edge_count}", type="half")
+                edge_count += 1
 
         # Preserve virtual edges from superG (add without duplicating)
         for u, v, edata in superG.edges(data=True):
@@ -662,7 +675,7 @@ class EdgeGraphBuilder:
                 if not eG.has_edge(u, v):
                     eG.add_edge(u, v, type="virtual")
 
-        return eG
+        return eG, eG_index_name_dict
 
     def _make_paired_Xto_x(self, ec_arr, merged_arr, neighbor_number, sc_unit_cell):
         """
@@ -698,8 +711,6 @@ class EdgeGraphBuilder:
     def _find_nearest_neighbor(self,i, n_n_distance_matrix):
         n_n_min_distance = np.min(n_n_distance_matrix[i:i + 1, :])
         _, n_j = locate_min_idx(n_n_distance_matrix[i:i + 1, :])
-        # print('add virtual edge between',nodes_list[i],nodes_list[n_j])
-        # n_n_distance_matrix[i, n_j] = 1000
         # set the column to 1000 to avoid the same atom being selected again
         n_n_distance_matrix[:, n_j] = 1000
         return n_j, n_n_min_distance, n_n_distance_matrix
@@ -764,11 +775,11 @@ class EdgeGraphBuilder:
             for xoo in xoo_ind_node0:
                 xoo_dict[xoo[0]] = xoo[1]
         else:
-            print(
-                "the order of xoo in every node are not same, please check the input"
-            )
-            print("xoo_ind_node0", xoo_ind_node0)
-            print("xoo_ind_node1", xoo_ind_node1)
+            self.ostream.print_warning("the order of xoo in every node are not same, please check the input")
+            self.ostream.print_info("xoo_ind_node0", xoo_ind_node0)
+            self.ostream.print_info("xoo_ind_node1", xoo_ind_node1)
+            self.ostream.flush()
+
         return xoo_dict
 
 
@@ -797,6 +808,12 @@ class EdgeGraphBuilder:
                 #    "no V node connected to this edge node, this linker is a isolated linker, will be ignored",
                 #    n,
                 # ) # debug
+                if self._debug:
+                    self.ostream.print_warning(
+                        "no V node connected to this edge node, this linker is a isolated linker, will be ignored",
+                        n,
+                    )
+                    self.ostream.flush()
                 continue
             all_Xs_vnodes_ind = []
             all_Xs_vnodes_ccpoints = np.zeros((0, 5))
@@ -827,10 +844,12 @@ class EdgeGraphBuilder:
 
                 if min_dist > 4:
                     unsaturated_linker.append(n)
-                    # print(
-                    #    "no xoo for edge node, this linker is a dangling unsaturated linker",
-                    #    n,
-                    # ) # debug
+                    if self._debug:
+                        self.ostream.print_warning(
+                            f"{min_dist} no xoo for edge node, this linker is a dangling unsaturated linker",
+                            n,
+                        )
+                        self.ostream.flush()
                     continue
                 # add the xoo to the edge node
 
@@ -846,81 +865,144 @@ class EdgeGraphBuilder:
                 xoo_fpoints_in_vnode = np.vstack(xoo_fpoints_in_vnode)
                 eG.nodes[n]["xoo_f_points"] = np.vstack(
                     (eG.nodes[n]["xoo_f_points"], xoo_fpoints_in_vnode))
-                # print('add xoo to edge node',n) #debug
+                if self._debug:
+                    self.ostream.print_info(f"add xoo to edge node {n}")
+                    self.ostream.flush()
         return eG, unsaturated_linker, matched_vnode_X, xoo_dict
 
-    def _addxoo2edge_ditopic(self,eG, sc_unit_cell):
+    def _addxoo2edge_ditopic(self, eG, sc_unit_cell):
+        """
+        Add XOO groups from V nodes to ditopic EDGE nodes in eG.
+
+        For each EDGE node:
+        - find X atoms on the edge and on connected V nodes;
+        - compute cartesian coordinates for matching (using sc_unit_cell);
+        - for each X on the edge, find the nearest unmatched X on the connected V nodes
+          (use _find_nearest_neighbor which also marks matched columns to prevent reuse);
+        - if the nearest distance is reasonable (< 4 Å) copy the XOO (X + its two O indices
+          from xoo_dict) from the matched V node into the EDGE node's "xoo_f_points";
+        - collect unsaturated linkers (no nearby XOO at all sites) and matched_vnode_X .
+
+        Returns:
+            eG, unsaturated_linker, matched_vnode_X, xoo_dict
+        """
         xoo_dict = self._get_xoo_dict_of_node(eG, sc_unit_cell)
         matched_vnode_X = []
         unsaturated_linker = []
-        # for every X atom in the EDGE node, search for the paired(nearest) X atom in the connected V node
-        # and then use the xoo_dict of the connected V node to extract the xoos of the connected V node
-        # and then add the xoos to the EDGE node
-        # all xoo_node for the V node is the same
+
         EDGE_nodes = [n for n in eG.nodes() if pname(n) == "EDGE"]
-        for n in EDGE_nodes:
-            eG.nodes[n]["xoo_f_points"] = np.zeros((0, 5))
+
+        for edge in EDGE_nodes:
+            # Initialize/clear xoo_f_points for this edge
+            eG.nodes[edge]["xoo_f_points"] = np.zeros((0, 5))
+
+            # Fetch X atoms on the edge
             Xs_edge_indices, Xs_edge_fpoints = fetch_X_atoms_ind_array(
-                eG.nodes[n]["f_points"], 0, "X")
+                eG.nodes[edge]["f_points"], 0, "X"
+            )
+            if len(Xs_edge_indices) == 0:
+                # nothing to match for this edge
+                continue
+
+            # Cartesian coordinates for edge Xs
             Xs_edge_ccpoints = np.hstack((
                 Xs_edge_fpoints[:, 0:2],
                 np.dot(sc_unit_cell, Xs_edge_fpoints[:, 2:5].astype(float).T).T,
-            ))  # NOTE: modified to skip atom type
-            V_nodes = [i for i in eG.neighbors(n) if (pname(i) != "EDGE")]
+            ))
+
+            # Collect X atoms from all connected V nodes
+            V_nodes = [v for v in eG.neighbors(edge) if pname(v) != "EDGE"]
             if len(V_nodes) == 0:
-                # unsaturated_linker.append(n)
-                print(
-                    "no V node connected to this edge node, this linker is a isolated linker, will be ignored",
-                    n,
-                )
+                if self._debug:
+                    self.ostream.print_warning(
+                        "no V node connected to this edge node, this linker is a isolated linker, will be ignored",
+                        edge,
+                    )
+                    self.ostream.flush()
                 continue
-            all_Xs_vnodes_ind = []
+
+            all_Xs_vnodes_ind = []          # list of [vnode, x_index_in_vnode, edge]
             all_Xs_vnodes_ccpoints = np.zeros((0, 5))
             for v in V_nodes:
-                # find the connected V node
                 Xs_vnode_indices, Xs_vnode_fpoints = fetch_X_atoms_ind_array(
-                    eG.nodes[v]["f_points"], 0, "X")
+                    eG.nodes[v]["f_points"], 0, "X"
+                )
+                if len(Xs_vnode_indices) == 0:
+                    continue
                 Xs_vnode_ccpoints = np.hstack((
                     Xs_vnode_fpoints[:, 0:2],
-                    np.dot(sc_unit_cell, Xs_vnode_fpoints[:,
-                                                        2:5].astype(float).T).T,
-                ))  # NOTE: modified to skip atom type
+                    np.dot(sc_unit_cell, Xs_vnode_fpoints[:, 2:5].astype(float).T).T,
+                ))
                 for ind in Xs_vnode_indices:
-                    all_Xs_vnodes_ind.append([v, ind, n])
+                    all_Xs_vnodes_ind.append([v, ind, edge])
                 all_Xs_vnodes_ccpoints = np.vstack(
-                    (all_Xs_vnodes_ccpoints, Xs_vnode_ccpoints))
-            edgeX_vnodeX_dist_matrix = np.zeros(
-                (len(Xs_edge_ccpoints), len(all_Xs_vnodes_ccpoints)))
-            for i in range(len(Xs_edge_ccpoints)):
-                for j in range(len(all_Xs_vnodes_ccpoints)):
-                    edgeX_vnodeX_dist_matrix[i, j] = np.linalg.norm(
-                        Xs_edge_ccpoints[i, 2:54].astype(float) -
-                        all_Xs_vnodes_ccpoints[j, 2:5].astype(float))
+                    (all_Xs_vnodes_ccpoints, Xs_vnode_ccpoints)
+                )
+
+            # If no Xs on connected vnodes, cannot match
+            if all_Xs_vnodes_ccpoints.shape[0] == 0:
+                if self._debug:
+                    self.ostream.print_warning(
+                        "no X atoms found on connected V nodes for edge", edge
+                    )
+                    self.ostream.flush()
+                continue
+
+            # Build distance matrix between edge Xs and vnode Xs (cartesian)
+            # safe broadcasting-based distance computation
+            edge_coords = Xs_edge_ccpoints[:, 2:5].astype(float)
+            vnode_coords = all_Xs_vnodes_ccpoints[:, 2:5].astype(float)
+            diff = edge_coords[:, None, :] - vnode_coords[None, :, :]
+            edgeX_vnodeX_dist_matrix = np.linalg.norm(diff, axis=2)
+
+            # For efficient appending collect xoo fpoints in a list, then stack once
+            collected_xoo = []
+
+            # For each edge X find nearest vnode X (while marking matched vnode X columns
+            # to avoid reusing the same vnode X multiple times)
             for k in range(len(Xs_edge_fpoints)):
-                n_j, min_dist, _ = self._find_nearest_neighbor(k,
-                                                        edgeX_vnodeX_dist_matrix)
-                if min_dist > 4:
-                    unsaturated_linker.append(n)
-                    # print(
-                    #   min_dist,
-                    #   "no xoo for edge node, this linker is a dangling unsaturated linker",
-                    #   n,
-                    # ) # debug
+                n_j, min_dist, edgeX_vnodeX_dist_matrix = self._find_nearest_neighbor(
+                    k, edgeX_vnodeX_dist_matrix
+                )
+
+                if min_dist > 4.0:
+                    # dangling/unsaturated linker
+                    unsaturated_linker.append(edge)
+                    if self._debug:
+                        self.ostream.print_warning(
+                            f"{min_dist} no xoo for edge node, this linker is a dangling unsaturated linker",
+                            edge,
+                        )
+                        self.ostream.flush()
                     continue
-                # add the xoo to the edge node
+
+                # Add the matched vnode X and its XOO group
                 nearest_vnode = all_Xs_vnodes_ind[n_j][0]
                 nearest_X_ind_in_vnode = all_Xs_vnodes_ind[n_j][1]
                 matched_vnode_X.append(all_Xs_vnodes_ind[n_j])
-                corresponding_o_indices = xoo_dict[nearest_X_ind_in_vnode]
-                xoo_ind_in_vnode = [[nearest_X_ind_in_vnode] +
-                                    corresponding_o_indices]
-                xoo_fpoints_in_vnode = [
-                    eG.nodes[nearest_vnode]["f_points"][i] for i in xoo_ind_in_vnode
-                ]
-                xoo_fpoints_in_vnode = np.vstack(xoo_fpoints_in_vnode)
-                eG.nodes[n]["xoo_f_points"] = np.vstack(
-                    (eG.nodes[n]["xoo_f_points"], xoo_fpoints_in_vnode))
-                # print('add xoo to edge node',n) #debug
+
+                # Find corresponding O indices from xoo_dict
+                corresponding_o_indices = xoo_dict.get(nearest_X_ind_in_vnode, [])
+                xoo_inds = [nearest_X_ind_in_vnode] + corresponding_o_indices
+
+                # Extract xoo f_points from the vnode and append
+                vnode_fpoints = eG.nodes[nearest_vnode]["f_points"]
+                try:
+                    xoo_fpoints_in_vnode = vnode_fpoints[xoo_inds]
+                except Exception:
+                    # Fallback: build by list comprehension if direct indexing fails
+                    xoo_fpoints_in_vnode = np.vstack([vnode_fpoints[idx] for idx in xoo_inds])
+
+                collected_xoo.append(xoo_fpoints_in_vnode)
+
+                if self._debug:
+                    self.ostream.print_info(f"add xoo to edge node {edge}")
+                    self.ostream.flush()
+
+            # After matching all edge Xs, stack collected xoo points (if any) into node attribute
+            if collected_xoo:
+                eG.nodes[edge]["xoo_f_points"] = np.vstack(collected_xoo)
+
         return eG, unsaturated_linker, matched_vnode_X, xoo_dict
 
 

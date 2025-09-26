@@ -25,6 +25,7 @@ class FrameTermination:
         self.properties = {}
         self.filename = filepath
         self.X_atom_type = "X"
+        self.Y_atom_type = "Y"
         self.pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
 
         self._debug = False
@@ -38,7 +39,7 @@ class FrameTermination:
         assert_msg_critical(Path(self.filename).is_file(), f"Termination file {self.filename} does not exist.")
         if self._debug:
             self.ostream.print_info(f"Reading termination file {self.filename}")
-        self.pdbreader.read_pdb(self.filename,recenter=True)
+        self.pdbreader.read_pdb(self.filename,recenter=True,com_type="Y") # recenter to Y atom which is O-O center for XOO
         self.termination_data = self.pdbreader.data
         if self._debug:
             self.ostream.print_info(f"Got {len(self.termination_data)} atoms from termination file.")
@@ -51,6 +52,8 @@ class FrameTermination:
         self.read_termination_file()
         if self.termination_data is not None:
             self.termination_X_data = self.termination_data[self.termination_data[:,-1]==self.X_atom_type]
+            self.termination_Y_data = self.termination_data[self.termination_data[:,-1]==self.Y_atom_type]
+
 
 
 

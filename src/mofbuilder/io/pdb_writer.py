@@ -49,37 +49,44 @@ class PdbWriter:
         
         newpdb = []
         newpdb.append(header)
+        last_name = ""
+        last_residue_number = 0
+        residue_count = 0
 
         with open(filepath, "w") as fp:
             # Iterate over each line in the input file
             for i in range(len(lines)):
-                # Split the line into individual values (assuming they are separated by spaces)
                 values = lines[i]
-                # Extract values based on their positions in the format string
-                value1 = "ATOM"
-                value2 = int(i + 1)
-                value3 = values[0]  # label
-                value4 = "MOL"  # residue
-                value5 = 1  # residue number
-                value6 = float(values[2])  # x
-                value7 = float(values[3])  # y
-                value8 = float(values[4])  # z
-                value9 = "1.00"
-                value10 = "0.00"
-                value11 = values[1]  # note
-                # Format the values using the specified format string
+                if lines[i][3] != last_name or lines[i][4] != last_residue_number:
+                    residue_count += 1
+                    last_name = lines[i][3]
+                    last_residue_number = lines[i][4]
+                atom_type = values[0]
+                atom_label = values[1]
+                atom_number = i + 1
+                residue_name = values[3]
+                residue_number = residue_count
+                x = values[5]
+                y = values[6]
+                z = values[7]
+                spin = values[8]
+                charge = values[9]
+                note = values[10]
+                 # Format the values using the specified format string
+
+                                 # Format the values using the specified format string
                 formatted_line = "%-6s%5d%5s%4s%10d%8.3f%8.3f%8.3f%6s%6s%4s" % (
-                    value1,
-                    value2,
-                    value3,
-                    value4,
-                    value5,
-                    value6,
-                    value7,
-                    value8,
-                    value9,
-                    value10,
-                    value11,
+                    "ATOM",
+                    int(atom_number),  # atom serial number
+                    atom_label,  # atom name
+                    residue_name[:3],  # residue name
+                    int(residue_number),  # residue sequence number
+                    float(x),  # x coordinate
+                    float(y),  # y coordinate
+                    float(z),  # z coordinate
+                    spin,  # occupancy
+                    charge,  # temperature factor
+                    note[1]  # element symbol
                 )
                 newpdb.append(formatted_line + "\n")
             fp.writelines(newpdb)

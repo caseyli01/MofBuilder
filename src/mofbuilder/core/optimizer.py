@@ -60,7 +60,7 @@ class NetOptimizer:
         self.sc_unit_cell = None
         self.sc_unit_cell_inv = None
         self.constant_length = 1.54  #default C-C single bond length
-        self.linker_length = None
+        self.linker_frag_length = None
 
         self.load_optimized_rotations = None
         self.skip_rotation_optimization = False
@@ -95,7 +95,7 @@ class NetOptimizer:
         - linker_x_fcoords (array):fractional coordinates of the X connected atoms of ditopic linker or branch of multitopic linker
         - linker_fcoords (array):fractional coordinates of the whole ditopic linker or branch of multitopic linker
         - linker_x_ccoords (array):cartesian coordinates of the X connected atoms of ditopic linker or branch of multitopic linker
-        - linker_length (float):distance between two X-X connected atoms of the ditopic linker or branch of multitopic linker
+        - linker_frag_length (float):distance between two X-X connected atoms of the ditopic linker or branch of multitopic linker
         - linker_ccoords (array):cartesian coordinates of the whole ditopic linker or branch of multitopic linker
         - linker_center_cif (str):cif file of the center of the multitopic linker
         - ec_unit_cell (array):unit cell of the center of the multitopic linker
@@ -115,7 +115,7 @@ class NetOptimizer:
         - sorted_edges_of_sortednodeidx (list):sorted edges in the template by connectivity with the index of the sorted nodes
         - optimized_rotations (dict):optimized rotations for the nodes in the template
         - optimized_params (array):optimized cell parameters for the template topology to fit the target MOF cell
-        - new_edge_length (float):new edge length of the ditopic linker or branch of multitopic linker, 2*constant_length+linker_length
+        - new_edge_length (float):new edge length of the ditopic linker or branch of multitopic linker, 2*constant_length+linker_frag_length
         - optimized_pair (dict): pair of connected nodes in the template with the index of the X connected atoms, used for the edge placement
         - scaled_rotated_node_positions (dict):scaled and rotated node positions in the target MOF cell
         - scaled_rotated_Xatoms_positions (dict):scaled and rotated X connected atom positions of nodes in the target MOF cell
@@ -170,7 +170,7 @@ class NetOptimizer:
         node_atom = self.V_data[:, 0:2]
         ec_atom = self.EC_data[:, 0:2] if self.EC_data is not None else None
 
-        linker_length = self.linker_length
+        linker_frag_length = self.linker_frag_length
         constant_length = self.constant_length
         x_com_length = np.mean(
             [np.linalg.norm(i) for i in self.node_x_ccoords])
@@ -265,15 +265,14 @@ class NetOptimizer:
         rot_node_X_pos_dict, _ = self._apply_rot2atoms_pos(
             opt_rots, G, node_X_pos_dict)
 
-        start_node = self.sorted_edges[0][
-            0]  # find_nearest_node_to_beginning_point(G)
+        start_node = self.sorted_edges[0][0]  # find_nearest_node_to_beginning_point(G)
 
         # loop all of the edges in G and get the lengths of the edges, length is the distance between the two nodes ccoords
         edge_lengths, lengths = self._get_edge_lengths(G)
 
         x_com_length = np.mean(
             [np.linalg.norm(i) for i in self.node_x_ccoords])
-        new_edge_length = self.linker_length + 2 * self.constant_length + 2 * x_com_length
+        new_edge_length = self.linker_frag_length + 2 * self.constant_length + 2 * x_com_length
         # update the node ccoords in G by loop edge, start from the start_node, and then update the connected node ccoords by the edge length, and update the next node ccords from the updated node
 
         new_ccoords, old_ccoords = self._update_node_ccoords(
@@ -352,7 +351,7 @@ class NetOptimizer:
         # linker_middle_point = np.mean(linker_x_vecs,axis=0)
         e_xx_vec = self.e_x_ccoords
         self.e_atom = self.E_data[:, 0:2]
-        linker_length = self.linker_length
+        linker_frag_length = self.linker_frag_length
         optimized_pair = self.optimized_pair
         scaled_rotated_Xatoms_positions = self.sc_rot_node_X_pos
         scaled_rotated_node_positions = self.sc_rot_node_pos
@@ -361,7 +360,7 @@ class NetOptimizer:
         sc_unit_cell_inv = self.sc_unit_cell_inv
         nodes_atom = self.nodes_atom
 
-        scalar = (linker_length + 2 * self.constant_length) / linker_length
+        scalar = (linker_frag_length + 2 * self.constant_length) / linker_frag_length
         extended_e_xx_vec = [i * scalar for i in e_xx_vec]
         norm_xx_vector_record = []
         rot_record = []
@@ -403,7 +402,7 @@ class NetOptimizer:
                 rot = rot_record[indices[0]]
                 # rot = reorthogonalize_matrix(rot)
             else:
-                _, rot, _ = superimpose_rotation_only(extended_e_xx_vec,
+                _, rot, trans = superimpose_rotation_only(extended_e_xx_vec,
                                                       xx_vector)
                 # rot = reorthogonalize_matrix(rot)
                 norm_xx_vector_record.append(norm_xx_vector)
