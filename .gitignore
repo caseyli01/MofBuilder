@@ -210,3 +210,4 @@ __marimo__/
 mofbuilder_output.gro
 *.pdb
 *.gro
+*.cif

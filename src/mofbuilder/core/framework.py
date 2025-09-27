@@ -446,6 +446,7 @@ class Framework:
         self.mofwriter.xoo_dict = self.edgegraphbuilder.xoo_dict
         self.mofwriter.dummy_atom_node_dict = self.dummy_atom_node_dict
         self.mofwriter.target_directory = self.target_directory
+        self.mofwriter.supercell_boundary = self.supercell
         self.mofwriter._debug = True
         if "xyz" in format:
             self.mofwriter.write_xyz(skip_merge=True)
@@ -453,12 +454,14 @@ class Framework:
             self.mofwriter.write_pdb(skip_merge=True)
         if "gro" in format:
             self.mofwriter.write_gro(skip_merge=True)
+        if "cif" in format:
+            self.mofwriter.write_cif(skip_merge=False,supercell_boundary=self.supercell, frame_cell_info=self.supercell_info)
 
 
 
 
 
-if __name__ != "__main__":
+if __name__ == "__main__":
     mof = Framework(mof_family="UiO-66")
     mof.data_path = 'tests/database'
     mof._debug = False
@@ -484,7 +487,7 @@ if __name__ != "__main__":
     mof.exchange_node_pdbfiles = 'tests/testdata/testnode.pdb'
     #mof.exchange_linker_pdbfiles = 'tests/testdata/testlinker.xyz'
     exG=mof.exchange_defects(mof.cleaved_eG)
-    mof.write(rmG, format=["xyz","pdb", "gro"])
+    mof.write(rmG, format=["xyz","pdb", "gro","cif"])
     print("done")
     print("done")
 
@@ -507,10 +510,10 @@ if __name__ == "__main__":
     mof.read_framework()
     mof.optimize_framework()
     mof._debug = True
-    mof.supercell = [10,10,10]
+    mof.supercell = [1,2,1]
 
     mof.make_supercell()
-    #mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     mof.update_node_termination = True
     mof.termination = True
     mof.termination_filename = 'methyl'
@@ -519,7 +522,7 @@ if __name__ == "__main__":
     mof.exchange_node_pdbfiles = 'tests/testdata/testnode.pdb'
     #mof.exchange_linker_pdbfiles = 'tests/testdata/testlinker.xyz'
     exG=mof.exchange_defects(mof.cleaved_eG)
-    mof.write(rmG, format=["xyz","pdb", "gro"])
+    mof.write(rmG, format=["xyz","pdb", "gro","cif"])
     print(f"done in {time.time() - start_time:.2f} seconds")
     print("done")
 

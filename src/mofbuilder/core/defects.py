@@ -100,7 +100,7 @@ class TerminationDefectGenerator:
         # clean all unsaturated linkers
         #add all unsaturated linkers to the to_remove_edges_name
         if self.clean_unsaturated_linkers:
-            nodes_names2rm.append(self.saved_unsaturated_linker)
+            nodes_names2rm.append(self.saved_unsaturated_linker) if self.saved_unsaturated_linker else None
             self.ostream.print_info(
                 f"clean unsaturated linkers: {self.saved_unsaturated_linker}"
             )
