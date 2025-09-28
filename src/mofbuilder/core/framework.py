@@ -457,6 +457,10 @@ class Framework:
         if "cif" in format:
             self.mofwriter.write_cif(skip_merge=False,supercell_boundary=self.supercell, frame_cell_info=self.supercell_info)
 
+        #write linker data to a file
+        with open(str(Path( self.mof_family + "_linker.xyz")), 'w') as f:
+            for line in self.mofwriter.edges_data[0]:
+                f.write(' '.join(map(str, line)) + '\n')
 
 
 
@@ -471,14 +475,14 @@ if __name__ == "__main__":
     mof.node_metal_type = "Zr"
     mof.dummy_atom_node = True
     mof.constant_length = 1.54
-    mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
+    #mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
     mof.read_framework()
     mof.optimize_framework()
     mof._debug = True
     mof.supercell = [2,2,2]
 
     mof.make_supercell()
-    mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    #mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     mof.update_node_termination = True
     mof.termination = True
     mof.termination_filename = 'methyl'
@@ -490,6 +494,7 @@ if __name__ == "__main__":
     mof.write(rmG, format=["xyz","pdb", "gro","cif"])
     print("done")
     print("done")
+    
 
 
 if __name__ == "__main__":
@@ -513,7 +518,7 @@ if __name__ == "__main__":
     mof.supercell = [1,2,1]
 
     mof.make_supercell()
-    mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+   # mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     mof.update_node_termination = True
     mof.termination = True
     mof.termination_filename = 'methyl'

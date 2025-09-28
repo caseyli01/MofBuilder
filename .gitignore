@@ -211,3 +211,6 @@ mofbuilder_output.gro
 *.pdb
 *.gro
 *.cif
+*.itp
+*.top
+.DS_Store
