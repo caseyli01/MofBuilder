@@ -91,15 +91,16 @@ class GromacsForcefieldMerger():
         for j in Path(self.linker_itp_dir).rglob('*.itp'):
             itp_name = j.stem
             dest_p = Path(target_itp_path,j.name)
-            if itp_name == self.linker_name:
+            if itp_name == Path(self.linker_name).stem:
                 self._copy_file(j, dest_p)
 
         # copy TERM itp
         for k in Path(data_path, 'terminations_itps').rglob('*.itp'):
-            itp_name = k.stem
-            dest_p = Path(target_itp_path,'TERM.itp')
-            if itp_name == self.termination_name:
+            dest_p = Path(target_itp_path,k.name)
+            if k.stem == Path(self.termination_name).stem:
                 self._copy_file(k, dest_p)
+                self.ostream.print_info(f"term.  {k} to {dest_p}")
+                self.ostream.flush()
 
         # copy solvent, ions, gas itps
         sol_list = []

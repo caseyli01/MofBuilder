@@ -216,3 +216,7 @@ mofbuilder_output.gro
 .DS_Store
 *.mdp
 *.h5
+*.edr
+*.tpr
+*.trr
+*.1#

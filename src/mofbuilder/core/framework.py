@@ -547,11 +547,12 @@ class Framework:
             self.ostream.flush()
             self.linker_ff_gen.src_linker_molecule = self.frame_linker.molecule
             self.linker_ff_gen.src_linker_forcefield_itpfile = self.provided_linker_itpfile
-            #self.linker_ff_gen.linker_residue_name = None
+            self.linker_ff_gen.linker_residue_name = "EDG"
             self.linker_ff_gen.map_existing_forcefield(self.mofwriter.edges_data[0])
             return
 
         self.linker_ff_gen.linker_optimization = self.linker_reconnect_opt
+        self.linker_ff_gen.linker_residue_name="EDG"
         self.linker_ff_gen.optimize_drv = self.linker_reconnect_drv  # xtb or qm
         #self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
         self.linker_ff_gen.linker_charge = self.linker_charge if self.linker_charge is not None else -1 * int(

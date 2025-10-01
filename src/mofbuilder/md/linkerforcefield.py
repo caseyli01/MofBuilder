@@ -33,7 +33,7 @@ class LinkerForceFieldGenerator:
         self.optimize_drv = "xtb"  #xtb or qm
         self.mmforcefield_generator = MMForceFieldGenerator()
         self.linker_ff_name = "Linker"
-        self.linker_residue_name = "LNK" #default residue name for linker
+        self.linker_residue_name = "EDG" #default residue name for linker
 
         self.linker_charge = -2
         self.linker_multiplicity = 1
@@ -105,7 +105,7 @@ class LinkerForceFieldGenerator:
             ff_gen.create_topology(molecule, resp=False)
             self.linker_itp_path = Path(self.target_directory, self.linker_ff_name).with_suffix('.itp')
             ffname = str(self.linker_itp_path).removesuffix('.itp')
-            ff_gen.write_gromacs_files(filename=ffname)
+            ff_gen.write_gromacs_files(filename=ffname,mol_name=self.linker_residue_name)
         elif (self.linker_optimization and self.optimize_drv == "qm"):
             opt_linker_mol, scf_result = self._dft_optimize(
                 molecule, self.reconnected_constraints)
@@ -116,7 +116,7 @@ class LinkerForceFieldGenerator:
             ff_gen.create_topology(opt_linker_mol,
                                    basis,
                                    scf_results=scf_result)
-            ff_gen.write_gromacs_files(filename=ffname)
+            ff_gen.write_gromacs_files(filename=ffname,mol_name=self.linker_residue_name)
         elif (self.linker_optimization and self.optimize_drv == "xtb"):
             self.ostream.print_info(
                 f"xtb driver is using for linker optimization")
