@@ -34,8 +34,6 @@ class GromacsForcefieldMerger():
         #self.neutral_system = False #later
         self.counter_ion_names = None #later
 
-
-
         self._debug = False
 
 
@@ -75,9 +73,16 @@ class GromacsForcefieldMerger():
         target_itp_path.mkdir(parents=True, exist_ok=True)
 
         # copy nodes itps
+        if self.dummy_atom_node:
+            node_itp_name = f"{self.node_metal_type}_dummy"
+        else:
+            node_itp_name = f"{self.node_metal_type}"
+        if self._debug:
+            self.ostream.print_info(f"looking for {node_itp_name}.itp for node")
+
         for i in Path(data_path, 'nodes_itps').rglob("*.itp"):
             #find correct node itp file, check dummy or not dummy, or other residues like O HO HHO
-            if (i.stem== f"{self.node_metal_type}_dummy") or (i.stem in self.other_residues):
+            if (i.stem== node_itp_name) or (i.stem in self.other_residues):
                 dest_p = Path(target_itp_path,i.name)
                 self._copy_file(i, dest_p)
 
@@ -225,6 +230,8 @@ class GromacsForcefieldMerger():
 
         top_res_lines = []
         for resname in list(res_info):
+            if resname[0]==';':
+                continue
             line = "%-5s%16d" % (resname[:3], res_info[resname])
             top_res_lines.append(line)
             top_res_lines.append("\n")

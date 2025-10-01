@@ -148,7 +148,7 @@ class MofWriter:
                 if "term_c_points" in cG.nodes[n]:
                     for term_ind_key, c_positions in cG.nodes[n][
                             "term_c_points"].items():
-                        term_name = "T" + cG.nodes[n]["name"]
+                        term_name = "T" + cG.nodes[n]["name"] #TODO: set term name
                         term_count -= 1
                         term_data = arr2data(c_positions,
                                              residue_name=term_name,
@@ -198,9 +198,9 @@ class MofWriter:
             self.residues_info['HHO']=nodes_number*dummy_atom_node_dict.get('HHO_count',0)
             self.residues_info['HO']=nodes_number*dummy_atom_node_dict.get('HO_count',0)
             self.residues_info['O']=nodes_number*dummy_atom_node_dict.get('O_count',0)
-        self.residues_info['NODE']=nodes_number
-        self.residues_info['LINKER']=edges_number
-        self.residues_info['TERMINATION']=terms_number
+        self.residues_info[';NODE']=nodes_number #ingnore
+        self.residues_info['EDGE']=edges_number
+        self.residues_info['TNODE']=terms_number
 
         return merged_data
 
@@ -477,61 +477,5 @@ class MofWriter:
 #################below are from display.py######################
 
 
-def gro_string_show(gro_lines_list, w=800, h=600, res_id=True, res_name=True):
-    try:
-        import py3Dmol
-
-        viewer = py3Dmol.view(width=w, height=h)
-        lines = gro_lines_list
-
-        viewer.addModel("".join(lines), "gro")
-        # viewer.setStyle({"stick": {}})
-
-        viewer.setViewStyle({"style": "outline", "width": 0.05})
-        viewer.setStyle({"stick": {}, "sphere": {"scale": 0.20}})
-        if res_id or res_name:
-            for i in range(2, len(lines) - 1):
-                if lines[i].strip() == "":
-                    continue
-                if lines[i - 1][0:5] == lines[i][0:5]:
-                    continue
-
-                value_resnumber = int((lines[i])[0:5])
-                value_resname = lines[i][5:10]
-                if value_resname.strip() == "TNO":
-                    continue
-                # value_label = lines[i][10:15]
-                # value_atom_number = int(lines[i][15:20])
-                value_x = float(lines[i][20:28]) * 10  # x
-                value_y = float(lines[i][28:36]) * 10  # y
-                value_z = float(lines[i][36:44]) * 10  # z
-
-                text = ""
-                if res_name:
-                    text += str(value_resname)
-                if res_id:
-                    text += str(value_resnumber)
-
-                viewer.addLabel(
-                    text,
-                    {
-                        "position": {
-                            "x": value_x,
-                            "y": value_y,
-                            "z": value_z,
-                        },
-                        "alignment": "center",
-                        "fontColor": "white",
-                        "font": "Arial",
-                        "fontSize": 12,
-                        "backgroundColor": "black",
-                        "backgroundOpacity": 0.5,
-                    },
-                )
-        viewer.render()
-        viewer.zoomTo()
-        viewer.show()
-    except ImportError:
-        raise ImportError("Unable to import py3Dmol")
 
     

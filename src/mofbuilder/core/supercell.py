@@ -793,8 +793,8 @@ class EdgeGraphBuilder:
                 xoo_dict[xoo[0]] = xoo[1]
         else:
             self.ostream.print_warning("the order of xoo in every node are not same, please check the input")
-            self.ostream.print_info("xoo_ind_node0", xoo_ind_node0)
-            self.ostream.print_info("xoo_ind_node1", xoo_ind_node1)
+            self.ostream.print_info(f"xoo_ind_node0: {xoo_ind_node0}")
+            self.ostream.print_info(f"xoo_ind_node1: {xoo_ind_node1}")
             self.ostream.flush()
 
         return xoo_dict

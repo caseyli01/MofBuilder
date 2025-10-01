@@ -7,7 +7,6 @@ from veloxchem.errorhandler import assert_msg_critical
 from veloxchem.environment import get_data_path
 import mpi4py.MPI as MPI
 import sys
-import re
 import time
 
 from ..utils.geometry import (
@@ -32,6 +31,7 @@ from ..utils.geometry import cartesian_to_fractional, fractional_to_cartesian
 from .superimpose import superimpose_rotation_only
 from ..md.linkerforcefield import LinkerForceFieldGenerator,ForceFieldMapper
 from ..md.gmxfilemerge import GromacsForcefieldMerger
+from ..visualization.viewer import Viewer
 
 
 #sG:scaled and rotated G
@@ -485,7 +485,7 @@ class Framework:
         self.defectgenerator.cleaved_eG = graph.copy()
         self.defectgenerator.linker_connectivity = self.linker_connectivity
         self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-        self.defectgenerator._debug = False
+        self.defectgenerator._debug = self._debug
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
@@ -515,7 +515,7 @@ class Framework:
         self.mofwriter.dummy_atom_node_dict = self.dummy_atom_node_dict
         self.mofwriter.target_directory = self.target_directory
         self.mofwriter.supercell_boundary = self.supercell
-        self.mofwriter._debug = False
+        self.mofwriter._debug = self._debug
         if "xyz" in format:
             self.mofwriter.write_xyz(skip_merge=True)
         if "pdb" in format:
@@ -572,6 +572,7 @@ class Framework:
 
         self.generate_linker_forcefield()
         self.gmx_ff = GromacsForcefieldMerger()
+        self.gmx_ff._debug = self._debug
         self.gmx_ff.database_dir = self.data_path
         self.gmx_ff.target_dir = self.target_directory
         self.gmx_ff.node_metal_type = self.node_metal_type
@@ -581,8 +582,14 @@ class Framework:
         self.gmx_ff.linker_name = self.linker_ff_gen.linker_ff_name
         self.gmx_ff.residues_info = self.mofwriter.residues_info
         self.gmx_ff.mof_name = self.mof_family
-        self.gmx_ff._debug=self._debug
         self.gmx_ff.generate_MOF_gromacsfile()
+
+    def show(self,w=800,h=600,res_id=True,res_name=True):
+        self.viewer= Viewer()
+        self.viewer.eG_dict= self.edgegraphbuilder.eG_index_name_dict
+        self.viewer.merged_lines =self.mofwriter.merged_data
+        self.viewer.lines_show(w,h,res_id,res_name)
+
         
 
 
@@ -590,12 +597,12 @@ if __name__ == "__main__":
     mof = Framework(mof_family="UiO-66")
     mof.data_path = 'tests/database'
     mof.target_directory = 'tests/out'
-    mof._debug = False
+    mof._debug = True
     mof.linker_xyzfile = 'tests/database/linker4test/bdc.xyz'
     mof.termination = True
     mof.termination_filename = 'methyl'
     mof.node_metal_type = "Zr"
-    mof.dummy_atom_node = True
+    mof.dummy_atom_node = False
     mof.constant_length = 1.54
     mof.update_node_termination = True
     #mof.supercell_custom_fbox = [[0,2],[0,2],[0,2]] #in fractional coordinate
@@ -618,7 +625,7 @@ if __name__ == "__main__":
     print("done")
     print("done")
 
-if __name__ != "__main__":
+if __name__ == "__main__":
 
     #another test
     start_time = time.time()

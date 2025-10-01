@@ -114,6 +114,11 @@ class FrameNode:
         self.nodeG = G
 
     def _fetch_template(self, metal):
+        if not self.dummy_node:
+            #just metal atom
+            self.ostream.print_info("No dummy atoms to add.")
+            self.ostream.flush()
+            return np.array([[0.0, 0.0, 0.0]])
         templates = {
             "Zr":
             np.array([[0.70710678, 0.70710678, 0.0],
@@ -192,27 +197,34 @@ class FrameNode:
                     dists, key=lambda x: x[1])[:2 * self.metal_valence]:
                 if oxy_node not in sG.adj[metal_n]:
                     sG.add_edge(metal_n, oxy_node)
-
-        count = ind_max + 1
-        for mn in metal_nodes:
-            neighbor_nodes = list(sG.adj[mn])
-            if len(neighbor_nodes) == 2 * self.metal_valence and all(
-                    nn(i) == "O" for i in neighbor_nodes):
-                beginning_cc = np.round(sG.nodes[mn]["ccoords"], 4)
-                d_ccoords = []
-                for nO in neighbor_nodes:
-                    sO = np.round(sG.nodes[nO]["ccoords"], 4)
-                    cnorm_vec = (
-                        sO - beginning_cc) / np.linalg.norm(sO - beginning_cc)
-                    d_ccoords.append(beginning_cc + cnorm_vec)
-                    sG.remove_edge(mn, nO)
-                ordered_ccoords = self._order_ccoords(d_ccoords, template,
-                                                      beginning_cc)
-                for row in range(len(d_ccoords)):
-                    d_name = f"D{count}"
-                    sG.add_node(d_name, type="D", ccoords=ordered_ccoords[row])
-                    sG.add_edge(mn, d_name)
-                    count += 1
+        #for dummy atoms
+        if self.dummy_node:
+            count = ind_max + 1
+            for mn in metal_nodes:
+                neighbor_nodes = list(sG.adj[mn])
+                if len(neighbor_nodes) == 2 * self.metal_valence and all(
+                        nn(i) == "O" for i in neighbor_nodes):
+                    beginning_cc = np.round(sG.nodes[mn]["ccoords"], 4)
+                    d_ccoords = []
+                    for nO in neighbor_nodes:
+                        sO = np.round(sG.nodes[nO]["ccoords"], 4)
+                        cnorm_vec = (
+                            sO - beginning_cc) / np.linalg.norm(sO - beginning_cc)
+                        d_ccoords.append(beginning_cc + cnorm_vec)
+                        sG.remove_edge(mn, nO)
+                    ordered_ccoords = self._order_ccoords(d_ccoords, template,
+                                                        beginning_cc)
+                    for row in range(len(d_ccoords)):
+                        d_name = f"D{count}"
+                        sG.add_node(d_name, type="D", ccoords=ordered_ccoords[row])
+                        sG.add_edge(mn, d_name)
+                        count += 1
+        else:
+            #clean all metal bonds if no dummy atoms
+            for mn in metal_nodes:
+                neighbor_nodes = list(sG.adj[mn])
+                for n in neighbor_nodes:
+                    sG.remove_edge(mn, n)
 
         # Ensure hydrogens are connected to nearest oxygen
         for hn in hydrogen_nodes:
@@ -228,6 +240,21 @@ class FrameNode:
                                   reverse=True)
 
     def _lines_of_atoms(self, subgraph, subgraph_nodes):
+        if not self.dummy_node:
+            #just metal atom
+            def not_metal_nodes(nodes):
+                l = [nn(node) for node in nodes]
+                return l.count(self.node_metal_type)==0
+
+
+            rows=[[n, subgraph.nodes[n]["type"], *subgraph.nodes[n]["ccoords"]]
+                for n in subgraph_nodes]
+            
+            if not_metal_nodes(subgraph_nodes):
+                rows.sort(key=lambda x: (x[1], x[0]))  
+
+            return rows
+
         rows = [[
             sn, subgraph.nodes[sn]["type"], *subgraph.nodes[sn]["ccoords"]
         ] for sn in subgraph_nodes]
@@ -250,12 +277,25 @@ class FrameNode:
 
         all_atom_lines = []
         all_atom_bonds = []
+        all_atom_lines_head = []
+        all_atom_bonds_head = []
+        all_atom_lines_tail = []
+        all_atom_bonds_tail = []
 
         for subnodes in self.subpart_nodes:
             subgraph = sG.subgraph(subnodes)
             sorted_nodes = sorted(subnodes)
-            all_atom_lines.extend(self._lines_of_atoms(subgraph, sorted_nodes))
-            all_atom_bonds.extend(self._get_bonds_from_subgraph(subgraph))
+            #extend Dummy or metal node firstly
+            if self.node_metal_type in [nn(sn) for sn in subnodes]:
+                all_atom_lines_head.extend(self._lines_of_atoms(subgraph, sorted_nodes))
+                all_atom_bonds_head.extend(self._get_bonds_from_subgraph(subgraph))
+            else:
+                all_atom_lines_tail.extend(self._lines_of_atoms(subgraph, sorted_nodes))
+                all_atom_bonds_tail.extend(self._get_bonds_from_subgraph(subgraph))
+
+            all_atom_bonds = all_atom_bonds_head + all_atom_bonds_tail
+            all_atom_lines = all_atom_lines_head + all_atom_lines_tail
+
 
         header = (
             "Generated by MOFbuilder\n"
@@ -271,26 +311,66 @@ class FrameNode:
         self.bonds = all_atom_bonds
 
     def _generate_dummy_node_split_dict(self):
+        #head: without dummy atoms
+        #tail: with dummy atoms and metal atoms
+        nodes_dict={'O':[],'HO':[],'HHO':[],'METAL':[],'others':[],'OOX':[]}
+
+        def is_OOX(list):
+            if len(list) != 3:
+                return False
+            #two oxygens and one X connected atoms
+            return list.count("O") == 2 and list.count("X") == 1
+        def is_O(list):
+            if len(list) != 1:
+                return False
+            #two oxygens connected atoms
+            return list.count("O") == 1
+        def is_HO(list):
+            if len(list) != 2:
+                return False
+            #one oxygen and one hydrogen connected atoms
+            return list.count("O") == 1 and list.count("H") == 1
+        def is_HHO(list):
+            if len(list) != 3:
+                return False
+            #one oxygen and two hydrogen connected atoms
+            return list.count("O") == 1 and list.count("H") == 2
+        def is_METAL(list):
+            nnlist=[nn(i) for i in list]
+            return nnlist.count(self.node_metal_type)==1
+
+
+
         head, tail = [], []
         for sub in self.sG_subparts:
             l = [nn(i) for i in sub]
+            l.sort()
             if "X" not in l:
                 head.append(sorted(sub))
+                if is_O(l):
+                    nodes_dict['O'].append(l)
+                elif is_HO(l):
+                    nodes_dict['HO'].append(l)
+                elif is_HHO(l):
+                    nodes_dict['HHO'].append(l)
+                elif is_METAL(l):
+                    nodes_dict['METAL'].append(l)
+                else:
+                    nodes_dict['others'].append(l)
             else:
                 tail.append(sorted(sub))
+                if is_OOX(l):
+                    nodes_dict['OOX'].append(l)
 
         self.subpart_nodes = head + tail
 
-        sub_headlens = [len(i) for i in head]
-        sub_taillens = [len(i) for i in tail]
-        dummy_count = sum(1 for i in sub_headlens if i not in (1, 2, 3))
-        hho_count = sub_headlens.count(3)
-        ho_count = sub_headlens.count(2)
-        o_count = sub_headlens.count(1)
-        dummy_res_len = next((i for i in sub_headlens if i not in (1, 2, 3)),
-                             0)
-        ooc_count = sub_taillens.count(3)
-
+ 
+        dummy_count = len(nodes_dict['METAL'])
+        hho_count = len(nodes_dict['HHO'])
+        ho_count = len(nodes_dict['HO'])
+        o_count = len(nodes_dict['O'])
+        dummy_res_len = len(nodes_dict["METAL"][0])
+        ooc_count = len(nodes_dict['OOX'])
         node_split_dict = {
             "HHO_count": hho_count,
             "HO_count": ho_count,
@@ -357,10 +437,17 @@ class FrameNode:
                 self.ostream.flush()
         else:
             self.ostream.print_info(
-                "No dummy atoms to add. Copying original node pdb file to target directory..."
+                "No dummy atoms to add."
             )
             self.ostream.flush()
-            self._copy_node_pdb2target()
+
+            self._add_dummy_atoms_nodepdb()
+            self._generate_dummy_node_split_dict()
+            self.ostream.print_info("Adding dummy atoms to node...")
+            self.ostream.flush()
+            self._write_dummy_node_pdb()
+            self._write_dummy_node_split_dict()
+            #self._copy_node_pdb2target()
         
         self.node_data, self.node_X_data = self.pdbreader.expand_arr2data(self.lines)
 

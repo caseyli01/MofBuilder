@@ -7,12 +7,12 @@ name = "mofbuilder"
 version = "0.1.0"
 description = "A Python library for building and modelling Metal-Organic Frameworks (MOFs)"
 readme = "README.md"
-license = {text = "LGPL-3.0-or-later"}
+license = { text = "LGPL-3.0-or-later" }
 authors = [
-    {name = "Chenxi Li", email = "chenxili@kth.se"}
+    { name = "Chenxi Li", email = "chenxili@kth.se" }
 ]
 maintainers = [
-    {name = "Chenxi Li", email = "chenxili@kth.se"}
+    { name = "Chenxi Li", email = "chenxili@kth.se" }
 ]
 keywords = ["mof", "metal-organic-framework", "chemistry", "materials", "crystal"]
 classifiers = [
@@ -33,8 +33,7 @@ requires-python = ">=3.8"
 dependencies = [
     "numpy>=1.20.0",
     "scipy>=1.7.0",
-    "matplotlib>=3.5.0",
-    "pandas>=1.3.0",
+    "veloxchem",
 ]
 
 [project.optional-dependencies]
@@ -55,11 +54,9 @@ docs = [
 ]
 analysis = [
     "scikit-learn>=1.0.0",
-    "networkx>=2.6",
 ]
 visualization = [
-    "plotly>=5.0.0",
-    "seaborn>=0.11.0",
+    "py3dmol",
 ]
 
 [project.urls]
@@ -102,7 +99,6 @@ target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
-  # Directories
   \.eggs
   | \.git
   | \.hg

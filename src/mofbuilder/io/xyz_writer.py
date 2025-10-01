@@ -69,3 +69,35 @@ class XyzWriter:
                 )
                 newxyz.append(formatted_line + "\n")
             fp.writelines(newxyz)
+
+
+    def get_xyzlines(self, header='', lines=[]):
+        """
+        line format:
+        atom_type, atom_label, atom_number, residue_name, residue_number, x, y, z, spin, charge, note
+        1         2    3      4            5              6  7  8 9    10 11
+        ATOM      1    C       MOL          1            1.000 2.000 3.000 1.00 0.00 C1
+        """
+        "data format[atom_type, atom_label, atom_number, residue_name, residue_number, value_x, value_y, value_z, spin, charge, note]"
+        
+        newxyz = []
+        newxyz.append(f"{len(lines)}\n")
+        newxyz.append(header.strip('\n')+'\n')
+        # Iterate over each line in the input file
+        for i in range(len(lines)):
+            values = lines[i]
+            atom_label = values[1]
+            atom_number = i + 1
+            x = float(values[5])
+            y = float(values[6])
+            z = float(values[7])
+            #xyz format line is 
+            formatted_line = "%-5s%8.3f%8.3f%8.3f" % (
+                atom_label,
+                x,
+                y,
+                z,
+            )
+            newxyz.append(formatted_line + "\n")
+        return newxyz
+    
