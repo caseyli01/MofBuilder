@@ -46,22 +46,23 @@ class GromacsForcefieldMerger():
             if not dest.parent.is_dir():
                 dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(src.read_text())
+        if self._debug:
+            self.ostream.print_info(f"File copied from {old_path} to {new_path}")
+            self.ostream.flush()
 
-        self.ostream.print_info(f"File copied from {old_path} to {new_path}")
-        self.ostream.flush()
-    
-    def _backup_and_number(self,target_path: str):
+    def _backup_and_rename(self,target_path: str):
         p = Path(target_path)
         if p.exists() and any(p.iterdir()):  # non-empty
             i = 1
-            new_path = Path(f"{target_path}#{i}")
+            new_path = Path(p.parent, f"#{i}_{p.name}")
             while new_path.exists():
                 i += 1
-                new_path = Path(f"#{i}_{target_path}")
+                new_path = Path(p.parent, f"#{i}_{p.name}")
             self.ostream.print_info(f"{p} existed and not empty, renaming {p} --> {new_path}")
+            self.ostream.flush()
             p.rename(new_path)
-
-
+            #recreate the original folder
+            Path(target_path).mkdir(parents=True, exist_ok=True)
 
     def _get_itps_from_database(self, data_path=None):
         # itps nodes_database, edges, sol, gas
@@ -70,7 +71,7 @@ class GromacsForcefieldMerger():
         target_itp_path = Path(self.target_dir, 'MD_run/itps')
         #initialize itp folder
         #if the target_itp_path exist and not empty, then rename the existed folder as _old as prefix recursively
-        # nodesitp_path = str(Path(data_path, 'nodes_itps'))
+        self._backup_and_rename(str(target_itp_path))
         target_itp_path.mkdir(parents=True, exist_ok=True)
 
         # copy nodes itps
@@ -170,43 +171,6 @@ class GromacsForcefieldMerger():
         return unique_atomtypes
 
 
-    def _genrate_top_file(self, itp_path, data_path, res_info, model_name=None):
-        all_secs = self._extract_atomstypes(itp_path)
-        unique_atomtypes = self._get_unique_atomtypes(all_secs)
-        middlelines, sectorname = self._parsetop(
-            data_path + "/nodes_itps/template.top")  # fetch template.top
-
-        top_res_lines = []
-        for resname in list(res_info):
-            line = "%-5s%16d" % (resname[:3], res_info[resname])
-            top_res_lines.append(line)
-            top_res_lines.append("\n")
-
-        top_itp_lines = []
-        for i in Path(itp_path).rglob("*itp"):
-            if str(Path(i).parent) not in ["posre.itp"]: #exception copy posre files
-                line = '#include "itps/' + str(Path(i).parent) + '/' + i.name + '"\n'
-                top_itp_lines.append(line)
-        # sec1 = unique_atomtypes
-        # sec2 = top_itp_lines
-        # sec3 = ["MOF" + "\n" + "\n"]
-        # sec4 = top_res_lines + ["\n"] + ["\n"]
-
-        newtop = (middlelines[0] + ["\n"] + ["\n"] + middlelines[1] +
-                unique_atomtypes + ["\n"] + ["\n"] + top_itp_lines + ["\n"] +
-                ["\n"] + middlelines[2] + ["MOF"] + ["\n"] + ["\n"] +
-                middlelines[3] + ["\n"] + top_res_lines)
-        if model_name is None:
-            model_name = "MOF"
-        topname = model_name + ".top"
-        top_path = "MD_run/" + topname
-        with open(top_path, "w") as f:
-            f.writelines(newtop)
-
-        self.ostream.print_info(topname, "is generated")
-        self.ostream.flush()
-        return top_path
-
 
     ####below are from itp_process.py############################
 
@@ -267,11 +231,15 @@ class GromacsForcefieldMerger():
 
         top_itp_lines = []
         for i in Path(itp_path).rglob("*itp"):
-            if str(Path(i).parent) not in ["posre.itp"]:
+            if str(Path(i).name) not in ["posre.itp"]:
+                if self._debug:
+                    self.ostream.print_info(f"found file: {i} in path {itp_path}")
+                    self.ostream.flush()
                 line = '#include "itps/' + i.name + '"\n'
                 top_itp_lines.append(line)
                 if self._debug:
                     self.ostream.print_info(f"line{line}")
+                    self.ostream.flush()
         # sec1 = unique_atomtypes
         # sec2 = top_itp_lines
         # sec3 = ["MOF" + "\n" + "\n"]
@@ -316,7 +284,7 @@ class GromacsForcefieldMerger():
         
     def generate_MOF_gromacsfile(self):
         database_path = self.database_dir
-        itps_path = self.target_dir
+        itps_path = Path(self.target_dir, 'MD_run/itps')
         res_info = self.residues_info
         model_name = self.mof_name
 

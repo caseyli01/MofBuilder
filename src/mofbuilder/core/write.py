@@ -46,7 +46,8 @@ class MofWriter:
         self.dummy_atom_node_dict = None  #dict of dummy atom counts in the node
 
         self.target_directory = None  #target directory to save the output files
-
+        
+        self.residues_info = {}
         self.merged_data = None  #merged data of nodes, edges, terms
         self.merged_f_data = None  #merged fractional data of nodes, edges
         self._debug = False  #debug mode
@@ -184,6 +185,23 @@ class MofWriter:
             (nodes_data, edges_data, terms_data
              )) if len(edges_data) > 0 or len(terms_data) > 0 else nodes_data
         self.merged_data = merged_data
+
+
+        #get residue names and counts, include dummy_atom_node_dict if provided
+
+        nodes_number = len(self.nodes_data)
+        edges_number = len(self.edges_data)
+        terms_number = len(self.terms_data)
+
+        if dummy_atom_node_dict is not None:
+            self.residues_info['METAL']=nodes_number*dummy_atom_node_dict.get('METAL_count',0)
+            self.residues_info['HHO']=nodes_number*dummy_atom_node_dict.get('HHO_count',0)
+            self.residues_info['HO']=nodes_number*dummy_atom_node_dict.get('HO_count',0)
+            self.residues_info['O']=nodes_number*dummy_atom_node_dict.get('O_count',0)
+        self.residues_info['NODE']=nodes_number
+        self.residues_info['LINKER']=edges_number
+        self.residues_info['TERMINATION']=terms_number
+
         return merged_data
 
 
@@ -252,8 +270,9 @@ class MofWriter:
                 return False
             if z < 0 or z >= box[2]:
                 return False
-            self.ostream.print_info(f"f_coords: {f_coords}, box: {box}")
-            self.ostream.flush()
+            if self._debug:
+                self.ostream.print_info(f"f_coords: {f_coords}, box: {box}")
+                self.ostream.flush()
             return True
 
         cG = self._remove_xoo_from_node(G, self.xoo_dict)
@@ -268,9 +287,6 @@ class MofWriter:
                     continue
                 node_f_data = get_node_fcoords_data(n, rG)
                 cG.nodes[n]["f_data"] = node_f_data
-                if self._debug:
-                    self.ostream.print_info(f"node {n} f_data shape: {node_f_data.shape}")
-                    self.ostream.flush()
                 nodes_data.append(node_f_data)
                 #check if the node have terminations
 
@@ -278,8 +294,6 @@ class MofWriter:
                 if not check_supercell_box_range(cG.nodes[n]["fcoords"], supercell_boundary):
                     continue
                 edge_f_data = get_edge_fcoords_data(n, cG)
-                self.ostream.print_info(f"edge {n} f_data shape: {edge_f_data.shape}")
-                self.ostream.flush()
                 cG.nodes[n]["f_data"] = edge_f_data
                 edges_data.append(edge_f_data)
 
@@ -444,9 +458,17 @@ class MofWriter:
 
         name_col = np.tile(new_name_list, nodes_num).reshape(-1, 1)
         #hstack the new_name_col to the stacked array, replacing the original name column
-        rename_data = np.hstack((nodes_data[:, 0:3], name_col, nodes_data[:,
-                                                                          4:]))
-        return rename_data
+        rename_data = np.hstack((nodes_data[:, 0:3], name_col, nodes_data[:, 4:]))
+        #reshape the rename_data to a list of arrays for each node
+        #reorder the atoms in each node to METAL, HHO, HO, O
+        rename_data = rename_data.reshape(nodes_num, -1, 11)
+        metals_data = np.vstack(rename_data[:, :metal_num, :]) if metal_num > 0 else np.empty((0,11))
+        hhos_data = np.vstack(rename_data[:, metal_num:metal_num + hho_num, :]) if hho_num > 0 else np.empty((0,11))
+        hos_data = np.vstack(rename_data[:, metal_num + hho_num:metal_num + hho_num + ho_num, :]) if ho_num > 0 else np.empty((0,11))
+        os_data = np.vstack(rename_data[:, metal_num + hho_num + ho_num:, :]) if o_num > 0 else np.empty((0,11))
+        ordered_data = np.vstack((metals_data, hhos_data, hos_data, os_data))
+
+        return ordered_data
 
 
 

@@ -33,18 +33,19 @@ class LinkerForceFieldGenerator:
         self.optimize_drv = "xtb"  #xtb or qm
         self.mmforcefield_generator = MMForceFieldGenerator()
         self.linker_ff_name = "Linker"
+        self.linker_residue_name = "LNK" #default residue name for linker
+
         self.linker_charge = -2
         self.linker_multiplicity = 1
         self.target_directory = None
         self.save_files = False
 
-        self.src_linker_forcefield_itpfile = None
-        self.src_linker_molecule = None
-        self.dest_linker_forcefield_itpfile = None
-        self.dest_linker_molecule = None
+        self.src_linker_forcefield_itpfile = None #set before use
+        self.src_linker_molecule = None #set before use
+        self.dest_linker_molecule = None #will be generated after reconnecting
+        self.linker_itp_path = None #final itp path after mapping
 
-        self._debug = True
-
+        self._debug = False
     def _reconnect_linker_molecule(self, linker_mol_data=None):
         #use x-x pair to set the connectivity of the linker molecule
         "x22 C 22 EDGE 2 6.13775354767322 23.363695120662403 10.596310043131485 0 0.0 EDGE_2"
@@ -88,7 +89,8 @@ class LinkerForceFieldGenerator:
         self.reconnected_constraints = connect_constraints
         return molecule
 
-    def generate_reconnected_molecule_forcefield(self, molecule):
+    def generate_reconnected_molecule_forcefield(self, linker_mol_data=None):
+        molecule = self._reconnect_linker_molecule(linker_mol_data)
         molecule.set_charge(self.linker_charge)
         molecule.set_multiplicity(self.linker_multiplicity)
 
@@ -101,22 +103,25 @@ class LinkerForceFieldGenerator:
             ff_gen.ostream.mute()
             ff_gen.connectivity_matrix = self.reconnected_connectivity_matrix
             ff_gen.create_topology(molecule, resp=False)
-            ffname = str(Path(self.target_directory, self.linker_ff_name))
+            self.linker_itp_path = Path(self.target_directory, self.linker_ff_name).with_suffix('.itp')
+            ffname = str(self.linker_itp_path).removesuffix('.itp')
             ff_gen.write_gromacs_files(filename=ffname)
         elif (self.linker_optimization and self.optimize_drv == "qm"):
-            opt_linker_mol, scf_result = self.dft_optimize(
+            opt_linker_mol, scf_result = self._dft_optimize(
                 molecule, self.reconnected_constraints)
             ff_gen = self.mmforcefield_generator
             basis = MolecularBasis.read(molecule, "def2-svp")
+            self.linker_itp_path = Path(self.target_directory, self.linker_ff_name).with_suffix('.itp')
+            ffname = str(self.linker_itp_path).removesuffix('.itp')
             ff_gen.create_topology(opt_linker_mol,
                                    basis,
                                    scf_results=scf_result)
-            ff_gen.write_gromacs_files(filename=self.linker_ff_name)
+            ff_gen.write_gromacs_files(filename=ffname)
         elif (self.linker_optimization and self.optimize_drv == "xtb"):
             self.ostream.print_info(
                 f"xtb driver is using for linker optimization")
             self.ostream.flush()
-            opt_linker_mol = self.xtb_optimize(molecule,
+            opt_linker_mol = self._xtb_optimize(molecule,
                                                self.reconnected_constraints)
             opt_linker_mol.set_charge(self.linker_charge)
             opt_linker_mol.set_multiplicity(self.linker_multiplicity)
@@ -124,8 +129,10 @@ class LinkerForceFieldGenerator:
             self.ostream.print_info(
                 f"generating forcefield of linker molecule for Gromacs")
             self.ostream.flush()
+            self.linker_itp_path = Path(self.target_directory, Path(self.linker_ff_name).with_suffix('.itp'))
+            ffname = str(self.linker_itp_path).removesuffix('.itp')
             ff_gen.create_topology(opt_linker_mol, resp=True)
-            ff_gen.write_gromacs_files(filename=self.linker_ff_name)
+            ff_gen.write_gromacs_files(filename=ffname)
 
     def _reconnect(self,
                    X_indices_coords,
@@ -143,11 +150,11 @@ class LinkerForceFieldGenerator:
             #check distance
             dist = np.linalg.norm(np.array(i[1]) - np.array(j[1]))
             if dist < 4.0:  #threshold for x-x bond
-                #clean all other bonds to X
-                connectivity_matrix[i[0], :] = 0
-                connectivity_matrix[:, i[0]] = 0
-                connectivity_matrix[j[0], :] = 0
-                connectivity_matrix[:, j[0]] = 0
+                #clean all other bonds to X, should n
+                #connectivity_matrix[i[0], :] = 0
+                #connectivity_matrix[:, i[0]] = 0
+                #connectivity_matrix[j[0], :] = 0
+                #connectivity_matrix[:, j[0]] = 0
                 #rebuild bond between X and C
                 connectivity_matrix[i[0], j[0]] = 1
                 connectivity_matrix[j[0], i[0]] = 1
@@ -161,7 +168,7 @@ class LinkerForceFieldGenerator:
                 continue
         return connectivity_matrix, connect_constraints
 
-    def xtb_optimize(self, molecule, constraints):
+    def _xtb_optimize(self, molecule, constraints):
         xtb_drv = XtbDriver()
         xtb_drv.ostream.mute()
         xtb_results = xtb_drv.compute(molecule)
@@ -190,7 +197,7 @@ class LinkerForceFieldGenerator:
             opt_mol.write_xyz_file(fname)
         return opt_mol
 
-    def dft_optimize(self, molecule, constraints):
+    def _dft_optimize(self, molecule, constraints):
         if molecule.get_multiplicity() == 1:
             mol_scf_drv = ScfRestrictedDriver()
         else:
@@ -245,34 +252,17 @@ class LinkerForceFieldGenerator:
         else:
             return False, None
 
-    def _get_mapping_between_linker_molecules(self, src_molecule,
-                                              dest_molecule_data):
-        src_mol_connectivity = src_molecule.get_connectivity_matrix()
-        self._reconnect_linker_molecule(dest_molecule_data)
-        dest_mol_connectivity = self.reconnected_connectivity_matrix
-        isomorphic, mapping = self._find_isomorphism_and_mapping(
-            src_mol_connectivity, dest_mol_connectivity)
-
-        #rebuild the connectivity of the linker in MOF
-        #reconnect the X-X bonds and seperate the frags
-        if not isomorphic:
-            raise ValueError(
-                "The linker molecule in MOF is not isomorphic to the reference linker molecule."
-            )
-        else:
-            #sort mapping by src indices
-            mapping = dict(sorted(mapping.items()))
-            mapping = {
-                k + 1: v + 1
-                for k, v in mapping.items()
-            }  #make it to 1-based index
-            #mapping should be like {0: 1, 1: 0, 2: 3, 3: 2, 4: 5, 5: 4, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15}
-            if self._debug:
-                self.ostream.print_info(
-                    f"Mapping between source and destination linker molecule: {mapping}"
-                )
-                self.ostream.flush()
-            return mapping
+    def map_existing_forcefield(self,linker_mol_data=None):
+        save_itp_path = Path(self.target_directory, self.linker_ff_name).with_suffix('.itp')
+        mapper = ForceFieldMapper(comm=self.comm, ostream=self.ostream)
+        mapper.dest_molecule = self._reconnect_linker_molecule(linker_mol_data)
+        mapper.dest_molecule_connectivity_matrix = self.reconnected_connectivity_matrix
+        mapper.src_molecule_forcefield_itpfile = self.src_linker_forcefield_itpfile
+        mapper.src_molecule = self.src_linker_molecule
+        mapped_sections = mapper._map_forcefield_sections(dest_resname=self.linker_residue_name)
+        mapper.write_mapped_itp_file(mapped_sections, str(save_itp_path))
+        self.linker_itp_path = save_itp_path
+        
 
 
 class ForceFieldMapper:
@@ -289,11 +279,16 @@ class ForceFieldMapper:
         self.dest_molecule = None
         self.target_directory = None
         self.save_files = False
-        self._debug = True
+        self._debug = False
+
+        self.dest_molecule_connectivity_matrix = None
 
     def _get_mapping_between_two_molecules(self, src_molecule, dest_molecule):
         src_mol_connectivity = src_molecule.get_connectivity_matrix()
-        dest_mol_connectivity = dest_molecule.get_connectivity_matrix()
+        if self.dest_molecule_connectivity_matrix is not None:
+            dest_mol_connectivity = self.dest_molecule_connectivity_matrix
+        else:
+            dest_mol_connectivity = dest_molecule.get_connectivity_matrix()
         isomorphic, mapping = LinkerForceFieldGenerator(
         )._find_isomorphism_and_mapping(src_mol_connectivity,
                                         dest_mol_connectivity)
@@ -320,6 +315,8 @@ class ForceFieldMapper:
             return mapping
 
     def _parse_itp_file(self, itpfile):
+        assert_msg_critical(itpfile is not None, "No source forcefield itp file provided.")
+
         # Read the input file and identify sections
         sections = {}
 
@@ -421,7 +418,7 @@ class ForceFieldMapper:
         #sort lines by line.split()[0]
         new_atoms_section_header = new_atoms_section[:2]
         new_atoms_section_main = sorted(new_atoms_section[2:],
-                                        key=lambda i: i.split()[0])
+                                        key=lambda i: int(i.split()[0]))
         new_main = []
         #get last line of charge sum
         charge_sum = 0.0
@@ -585,9 +582,14 @@ class ForceFieldMapper:
             self.ostream.print_info(
                 f"destination atom labels {dest_atomlabels}")
             self.ostream.flush()
+        self.mapped_sections = dest_sections
         return dest_sections
 
     def write_mapped_itp_file(self, mapped_sections, output_itpfile):
+        if not Path(output_itpfile).suffix == '.itp':
+            output_itpfile = Path(output_itpfile).with_suffix('.itp')
+        self.ostream.print_info(f"Writing mapped forcefield to itp file: {output_itpfile}")
+        self.ostream.flush()
         with open(output_itpfile, 'w') as fp:
             for section_name, lines in mapped_sections.items():
                 fp.write(f"[{section_name}]\n")

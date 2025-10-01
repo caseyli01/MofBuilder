@@ -466,7 +466,7 @@ class EdgeGraphBuilder:
         self.linker_connectivity = None
         self.sc_unit_cell= None #3x3 matrix of the supercell unit cell
         self.supercell = None #same as the supercell in supercellbuilder
-
+        self.node_connectivity = None
         #specific buffer range for cleaving the supercell
         self.custom_fbox = None #in fractional coordinate
 
@@ -506,6 +506,23 @@ class EdgeGraphBuilder:
         self._make_supercell_range_cleaved_eG(self.eG, self.supercell, self.custom_fbox)
         self.eG_index_name_dict = eG_index_name_dict
         #will generate the cleaved_eG, cleaved_edges, cleaved_nodes
+        self.unsaturated_linkers = unsaturated_linker
+
+        self.unsaturated_nodes = self._find_unsaturated_node(self.eG, self.node_connectivity)
+        
+    
+    def _find_unsaturated_node(self, eG, node_connectivity):
+        # find unsaturated node V in eG
+        unsaturated_node = []
+        for n in eG.nodes():
+            if pname(n) != "EDGE":
+                real_neighbor = []
+                for cn in eG.neighbors(n):
+                    if eG.edges[(n, cn)]["type"] == "real":
+                        real_neighbor.append(cn)
+                if len(real_neighbor) < node_connectivity:
+                    unsaturated_node.append(n)
+        return unsaturated_node
 
 
 
@@ -1013,10 +1030,11 @@ class EdgeGraphBuilder:
         removed_nodes = []
 
         if custom_fbox is None:
-            self.cleaved_eG = new_eG.copy()
-            self.cleaved_edges = removed_edges
-            self.cleaved_nodes = removed_nodes
-            return
+            #self.cleaved_eG = new_eG.copy()
+            #self.cleaved_edges = removed_edges
+            #self.cleaved_nodes = removed_nodes
+            #return
+            custom_fbox = [[0,supercell[0],],[0,supercell[1]],[0,supercell[2]]]
         custom_fbox= np.array(custom_fbox) # [[xlo,xhi],[ylo,yhi],[zlo,zhi]]
         def check_supercell_box_range(fcoords, supercell, custom_fbox):
             # check if the fcoords is in the supercell box range with buffer

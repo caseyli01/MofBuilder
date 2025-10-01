@@ -64,7 +64,7 @@ class GroWriter:
                 atom_type = values[0]
                 atom_label = values[1]
                 atom_number = i + 1
-                residue_name = values[3]
+                residue_name = values[3].split('_')[0]
                 residue_number = residue_count
                 x = float(values[5])/10  # convert to nm
                 y = float(values[6])/10

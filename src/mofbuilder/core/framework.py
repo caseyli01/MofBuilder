@@ -30,7 +30,7 @@ from ..io.basic import pname, is_list_A_in_B
 from ..io.pdb_reader import PdbReader
 from ..utils.geometry import cartesian_to_fractional, fractional_to_cartesian
 from .superimpose import superimpose_rotation_only
-from ..md.linkerforcefield import LinkerForceFieldProcessor
+from ..md.linkerforcefield import LinkerForceFieldGenerator,ForceFieldMapper
 from ..md.gmxfilemerge import GromacsForcefieldMerger
 
 
@@ -63,6 +63,8 @@ class Framework:
                                              ostream=self.ostream)
         self.net_optimizer = NetOptimizer(comm=self.comm, ostream=self.ostream)
         self.mofwriter = MofWriter(comm=self.comm, ostream=self.ostream)
+        self.defectgenerator = TerminationDefectGenerator(comm=self.comm,
+                                                          ostream=self.ostream)
 
         #will be set when reading the net
         self.net_spacegroup = None
@@ -151,6 +153,7 @@ class Framework:
         self.linker_multiplicity = None
         self.linker_reconnect_drv = 'xtb'
         self.linker_reconnect_opt = True
+        self.provided_linker_itpfile = None  #if provided, will map directly
 
         #debug
         self._debug = False
@@ -371,7 +374,7 @@ class Framework:
         self.supercellbuilder.add_virtual_edge = self.add_virtual_edge
         self.supercellbuilder.vir_edge_range = self.vir_edge_range
         self.supercellbuilder.vir_edge_max_neighbor = self.vir_edge_max_neighbor
-        self.supercellbuilder._debug = True
+        self.supercellbuilder._debug = False
 
         self.supercellbuilder.build_supercellGraph()
         self.superG = self.supercellbuilder.superG
@@ -380,13 +383,14 @@ class Framework:
         #convert to edge graph
         self.edgegraphbuilder = EdgeGraphBuilder(comm=self.comm,
                                                  ostream=self.ostream)
-        self.edgegraphbuilder._debug = True
+        self.edgegraphbuilder._debug = False
         if self._debug:
             self.ostream.print_info(
                 f"superG has {len(self.supercellbuilder.superG.nodes())} nodes and {len(self.supercellbuilder.superG.edges())} edges"
             )
         self.edgegraphbuilder.superG = self.supercellbuilder.superG
         self.edgegraphbuilder.linker_connectivity = self.linker_connectivity
+        self.edgegraphbuilder.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
         self.edgegraphbuilder.custom_fbox = self.supercell_custom_fbox
         self.edgegraphbuilder.sc_unit_cell = self.net_optimizer.sc_unit_cell
         self.edgegraphbuilder.supercell = self.supercell
@@ -405,20 +409,21 @@ class Framework:
                 f"cleaved_eG has {len(self.edgegraphbuilder.cleaved_eG.nodes())} nodes and {len(self.edgegraphbuilder.cleaved_eG.edges())} edges"
             )
             self.ostream.flush()
+        
 
     def exchange_defects(self, graph):
-        self.defectgenerator = TerminationDefectGenerator(comm=self.comm,
-                                                          ostream=self.ostream)
         self.defectgenerator.cleaved_eG = graph.copy()
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.linker_connectivity = self.linker_connectivity
         self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-        self.defectgenerator._debug = True
+        self.defectgenerator._debug = False
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
         self.defectgenerator.clean_unsaturated_linkers = self.clean_unsaturated_linkers
         self.defectgenerator.update_node_termination = self.update_node_termination
+        self.defectgenerator.unsaturated_linkers = self.edgegraphbuilder.unsaturated_linkers
+        self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
 
         #exchange
         if self.exchange_node_pdbfile is not None:
@@ -472,8 +477,6 @@ class Framework:
         return exG.copy()
 
     def remove_defects(self, graph):
-        self.defectgenerator = TerminationDefectGenerator(comm=self.comm,
-                                                          ostream=self.ostream)
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.termination_data = self.termination_data
         self.defectgenerator.termination_X_data = self.termination_X_data
@@ -482,7 +485,7 @@ class Framework:
         self.defectgenerator.cleaved_eG = graph.copy()
         self.defectgenerator.linker_connectivity = self.linker_connectivity
         self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-        self.defectgenerator._debug = True
+        self.defectgenerator._debug = False
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
@@ -492,9 +495,9 @@ class Framework:
         self.defectgenerator.saved_unsaturated_linker = self.edgegraphbuilder.unsaturated_linkers
         self.defectgenerator.matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.xoo_dict = self.edgegraphbuilder.xoo_dict
-        self.defectgenerator.unsaturated_node = self.edgegraphbuilder.unsaturated_nodes
-        self.defectgenerator.unsaturated_linker = self.edgegraphbuilder.unsaturated_linkers
-
+        self.defectgenerator.use_termination = self.termination
+        self.defectgenerator.unsaturated_linkers = self.edgegraphbuilder.unsaturated_linkers
+        self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
         #remove
         rmG = self.defectgenerator.remove_items_or_terminate(
             self.remove, graph)
@@ -512,7 +515,7 @@ class Framework:
         self.mofwriter.dummy_atom_node_dict = self.dummy_atom_node_dict
         self.mofwriter.target_directory = self.target_directory
         self.mofwriter.supercell_boundary = self.supercell
-        self.mofwriter._debug = True
+        self.mofwriter._debug = False
         if "xyz" in format:
             self.mofwriter.write_xyz(skip_merge=True)
         if "pdb" in format:
@@ -531,11 +534,26 @@ class Framework:
         #        f.write(' '.join(map(str, line)) + '\n')
 
     def generate_linker_forcefield(self):
+        self.linker_ff_gen = LinkerForceFieldGenerator(comm=self.comm, ostream=self.ostream)
+        self.linker_ff_gen.target_directory = self.target_directory
+        self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
+        self.linker_ff_gen.save_files = self.save_files
+        self.linker_ff_gen._debug = self._debug
 
-        self.linker_ff_gen = LinkerForceFieldProcessor()
+        if self.provided_linker_itpfile is not None:
+            self.ostream.print_info(
+                "Linker force field is provided by the user, will map it directly."
+            )
+            self.ostream.flush()
+            self.linker_ff_gen.src_linker_molecule = self.frame_linker.molecule
+            self.linker_ff_gen.src_linker_forcefield_itpfile = self.provided_linker_itpfile
+            #self.linker_ff_gen.linker_residue_name = None
+            self.linker_ff_gen.map_existing_forcefield(self.mofwriter.edges_data[0])
+            return
+
         self.linker_ff_gen.linker_optimization = self.linker_reconnect_opt
         self.linker_ff_gen.optimize_drv = self.linker_reconnect_drv  # xtb or qm
-        self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
+        #self.linker_ff_gen.linker_ff_name = self.linker_ff_name if self.linker_ff_name is not None else f"{self.mof_family}_linker"
         self.linker_ff_gen.linker_charge = self.linker_charge if self.linker_charge is not None else -1 * int(
             self.linker_connectivity)
         self.linker_ff_gen.linker_multiplicity = self.linker_multiplicity if self.linker_multiplicity is not None else 1
@@ -545,13 +563,10 @@ class Framework:
             f"linker multiplicity is set to {self.linker_ff_gen.linker_multiplicity}"
         )
         self.ostream.flush()
-        self.linker_ff_gen.target_directory = self.target_directory
-        self.linker_ff_gen.save_files = self.save_files
-        self.linker_ff_gen._debug = False
-        self.linker_ff_gen.generate_forcefield_reconnected_linker_molecule(
-            self.mofwriter.edges_data[0])
-    def map_linker_forcefield(self):
+      
+        self.linker_ff_gen.generate_reconnected_molecule_forcefield(self.mofwriter.edges_data[0])
         
+
 
     def md_prepare(self):
 
@@ -564,14 +579,14 @@ class Framework:
         self.gmx_ff.termination_name = self.termination_filename
         self.gmx_ff.linker_itp_dir = self.target_directory
         self.gmx_ff.linker_name = self.linker_ff_gen.linker_ff_name
-        self.gmx_ff.residues_info = {"METAL": 5}
+        self.gmx_ff.residues_info = self.mofwriter.residues_info
         self.gmx_ff.mof_name = self.mof_family
         self.gmx_ff._debug=self._debug
         self.gmx_ff.generate_MOF_gromacsfile()
         
 
 
-if __name__ != "__main__":
+if __name__ == "__main__":
     mof = Framework(mof_family="UiO-66")
     mof.data_path = 'tests/database'
     mof.target_directory = 'tests/out'
@@ -582,28 +597,28 @@ if __name__ != "__main__":
     mof.node_metal_type = "Zr"
     mof.dummy_atom_node = True
     mof.constant_length = 1.54
-    #mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
+    mof.update_node_termination = True
+    #mof.supercell_custom_fbox = [[0,2],[0,2],[0,2]] #in fractional coordinate
     mof.read_framework()
     mof.optimize_framework()
-    mof._debug = True
-    mof.supercell = [2, 2, 2]
+    mof._debug = False
+    mof.supercell = [1,1,1]
 
     mof.make_supercell()
     #mof.remove = [1,2,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     mof.update_node_termination = True
-    mof.termination = True
-    mof.termination_filename = 'methyl'
     rmG = mof.remove_defects(mof.cleaved_eG)
-    mof.exchange = [3, 6]
-    mof.exchange_node_pdbfiles = 'tests/testdata/testnode.pdb'
+    #mof.exchange = [3, 6]
+    #mof.exchange_node_pdbfiles = 'tests/testdata/testnode.pdb'
     #mof.exchange_linker_pdbfiles = 'tests/testdata/testlinker.xyz'
-    exG = mof.exchange_defects(mof.cleaved_eG)
+    #exG = mof.exchange_defects(mof.cleaved_eG)
     mof.write(rmG, format=["xyz", "pdb", "gro", "cif"])
+    mof.provided_linker_itpfile = 'srcLinker.itp'
     mof.md_prepare()
     print("done")
     print("done")
 
-if __name__ == "__main__":
+if __name__ != "__main__":
 
     #another test
     start_time = time.time()
@@ -622,7 +637,6 @@ if __name__ == "__main__":
     #mof.supercell_custom_fbox = [[0,2],[0,1.5],[0,1.5]] #in fractional coordinate
     mof.read_framework()
     mof.optimize_framework()
-    mof._debug = True
     mof.supercell = [1, 2, 1]
     mof.linker_reconnect_opt=False
 
@@ -636,6 +650,7 @@ if __name__ == "__main__":
     exG = mof.exchange_defects(mof.cleaved_eG)
     mof.write(rmG, format=["xyz", "pdb", "gro", "cif"])
     mof.md_prepare()
+
     print(f"done in {time.time() - start_time:.2f} seconds")
     print("done")
 

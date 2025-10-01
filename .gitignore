@@ -215,3 +215,4 @@ mofbuilder_output.gro
 *.top
 .DS_Store
 *.mdp
+*.h5
