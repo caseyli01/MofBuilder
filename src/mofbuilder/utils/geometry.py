@@ -1,219 +1,133 @@
-"""
-Geometry utility functions for MOF structures.
-
-Copyright (C) 2024 MofBuilder Contributors
-
-This library is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 3 of the License, or (at your option) any later version.
-
-This library is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with this library; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-"""
-
-from typing import List, Tuple
-
 import numpy as np
+# util functions for Cartesian and fractional coordinates conversion
 
 
-def distance_matrix(positions: np.ndarray) -> np.ndarray:
-    """
-    Calculate distance matrix between all pairs of positions.
-    
-    Args:
-        positions: Array of shape (n, 3) containing 3D coordinates.
-        
-    Returns:
-        Array of shape (n, n) containing pairwise distances.
-    """
-    n = positions.shape[0]
-    distances = np.zeros((n, n))
-    
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = np.linalg.norm(positions[i] - positions[j])
-            distances[i, j] = dist
-            distances[j, i] = dist
-    
-    return distances
+def unit_cell_to_cartesian_matrix(aL, bL, cL, alpha, beta, gamma):
+    pi = np.pi
+    """Convert unit cell parameters to a Cartesian transformation matrix."""
+    aL, bL, cL, alpha, beta, gamma = list(
+        map(float, (aL, bL, cL, alpha, beta, gamma)))
+    ax = aL
+    ay = 0.0
+    az = 0.0
+    bx = bL * np.cos(gamma * pi / 180.0)
+    by = bL * np.sin(gamma * pi / 180.0)
+    bz = 0.0
+    cx = cL * np.cos(beta * pi / 180.0)
+    cy = (cL * bL * np.cos(alpha * pi / 180.0) - bx * cx) / by
+    cz = (cL**2.0 - cx**2.0 - cy**2.0)**0.5
+    unit_cell = np.asarray([[ax, ay, az], [bx, by, bz], [cx, cy, cz]]).T
+    return unit_cell
 
 
-def find_neighbors(
-    positions: np.ndarray, 
-    center_idx: int, 
-    max_distance: float
-) -> List[int]:
-    """
-    Find neighbors within a specified distance from a center point.
-    
-    Args:
-        positions: Array of shape (n, 3) containing 3D coordinates.
-        center_idx: Index of the center point.
-        max_distance: Maximum distance for neighbors.
-        
-    Returns:
-        List of indices of neighboring points.
-    """
-    center = positions[center_idx]
-    neighbors = []
-    
-    for i, pos in enumerate(positions):
-        if i == center_idx:
-            continue
-        
-        distance = np.linalg.norm(pos - center)
-        if distance <= max_distance:
-            neighbors.append(i)
-    
-    return neighbors
+def fractional_to_cartesian(fractional_coords, T):
+    T = T.astype(float)
+    fractional_coords = fractional_coords.astype(float)
+    """Convert fractional coordinates to Cartesian using the transformation matrix."""
+    return np.dot(T, fractional_coords.T).T
 
 
-def rotation_matrix(axis: np.ndarray, angle: float) -> np.ndarray:
+def cartesian_to_fractional(cartesian_coords, unit_cell_inv):
+    cartesian_coords = cartesian_coords.astype(float)
+    unit_cell_inv = unit_cell_inv.astype(float)
+    """Convert Cartesian coordinates to fractional coordinates using the inverse transformation matrix."""
+    return np.dot(unit_cell_inv, cartesian_coords.T).T
+
+
+def locate_min_idx(a_array):
+    # print(a_array,np.min(a_array))
+    idx = np.argmin(a_array)
+    row_idx = idx // a_array.shape[1]
+    col_idx = idx % a_array.shape[1]
+    return row_idx, col_idx
+
+
+def reorthogonalize_matrix(matrix):
     """
-    Create a rotation matrix for rotation about an arbitrary axis.
-    
-    Args:
-        axis: Rotation axis (will be normalized).
-        angle: Rotation angle in radians.
-        
-    Returns:
-        3x3 rotation matrix.
+    Ensure the matrix is a valid rotation matrix with determinant = 1.
     """
-    # Normalize the axis
-    axis = axis / np.linalg.norm(axis)
-    
-    # Rodrigues' rotation formula
-    cos_angle = np.cos(angle)
-    sin_angle = np.sin(angle)
-    
-    # Cross product matrix
-    K = np.array([
-        [0, -axis[2], axis[1]],
-        [axis[2], 0, -axis[0]],
-        [-axis[1], axis[0], 0]
-    ])
-    
-    # Rotation matrix
-    R = (np.eye(3) + 
-         sin_angle * K + 
-         (1 - cos_angle) * np.dot(K, K))
-    
+    U, _, Vt = np.linalg.svd(matrix)
+    R = np.dot(U, Vt)
+    if np.linalg.det(R) < 0:
+        U[:, -1] *= -1
+        R = np.dot(U, Vt)
     return R
 
 
-def angle_between_vectors(v1: np.ndarray, v2: np.ndarray) -> float:
+def find_optimal_pairings(node_i_positions, node_j_positions):
     """
-    Calculate angle between two vectors in radians.
+    Find the optimal one-to-one pairing between atoms in two nodes using the Hungarian algorithm.
+    """
+    num_i, num_j = len(node_i_positions), len(node_j_positions)
+    cost_matrix = np.zeros((num_i, num_j))
+    for i in range(num_i):
+        for j in range(num_j):
+            cost_matrix[i, j] = np.linalg.norm(node_i_positions[i, 1:] -
+                                               node_j_positions[j, 1:])
+
+    # row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    # print(cost_matrix.shape) #DEBUG
+    row_ind, col_ind = locate_min_idx(cost_matrix)
+    # print(row_ind,col_ind,cost_matrix) #DEBUG
+
+    return [row_ind, col_ind]
+
+
+def find_edge_pairings(sorted_nodes, sorted_edges, atom_positions):
+    """
+    Identify optimal pairings for each edge in the graph.
+
+    Parameters:
+        G (networkx.Graph): Graph structure with edges between nodes.
+        atom_positions (dict): Positions of X atoms for each node.
+
+    Returns:
+        dict: Mapping of edges to optimal atom pairs.
+            Example: {(0, 1): [(0, 3), (1, 2)], ...}
+    """
+
+    edge_pairings = {}
+
+    for i, j in sorted_edges:
+        node_i_positions = atom_positions[i]  # [index,x,y,z]
+        node_j_positions = atom_positions[j]  # [index,x,y,z]
+
+        # Find optimal pairings for this edge
+
+        pairs = find_optimal_pairings(node_i_positions, node_j_positions)
+        # print(sorted_nodes[i],sorted_nodes[j],pairs) #DEBUG
+        edge_pairings[(i, j)] = pairs  # update_pairs(pairs,atom_positions,i,j)
+        # idx_0,idx_1 = pairs[0]
+        # x_idx_0 = atom_positions[i][idx_0][0]
+        # x_idx_1 = atom_positions[j][idx_1][0]
+    #
+    # edge_pairings[(i, j)] = update_pairs(pairs,atom_positions,i,j) #but only first pair match
+    # atom_positions[i] = np.delete(atom_positions[i], idx_0, axis=0)
+    # atom_positions[j] = np.delete(atom_positions[j], idx_1, axis=0)
+
+    return edge_pairings
+
+
+def Carte_points_generator(xyz_num):
+    """Generate a 3D grid of points with integer coordinates.
     
-    Args:
-        v1: First vector.
-        v2: Second vector.
+    Parameters:
+        xyz_num (tuple): Number of divisions in x, y, and z directions.
         
     Returns:
-        Angle between vectors in radians.
+        ndarray: Array of points with shape (n, 3).
     """
-    # Normalize vectors
-    v1_norm = v1 / np.linalg.norm(v1)
-    v2_norm = v2 / np.linalg.norm(v2)
+    x_num, y_num, z_num = xyz_num
+    # Use meshgrid for efficient point generation
+    x = np.arange(x_num + 1)
+    y = np.arange(y_num + 1)
+    z = np.arange(z_num + 1)
     
-    # Calculate angle
-    cos_angle = np.clip(np.dot(v1_norm, v2_norm), -1.0, 1.0)
-    return np.arccos(cos_angle)
+    # Create meshgrid and reshape to get all points
+    xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+    points = np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T
+    
+    return points
 
 
-def dihedral_angle(p1: np.ndarray, p2: np.ndarray, 
-                  p3: np.ndarray, p4: np.ndarray) -> float:
-    """
-    Calculate dihedral angle between four points.
-    
-    Args:
-        p1, p2, p3, p4: Four points defining the dihedral angle.
-        
-    Returns:
-        Dihedral angle in radians.
-    """
-    # Vectors along the bonds
-    v1 = p2 - p1
-    v2 = p3 - p2
-    v3 = p4 - p3
-    
-    # Normal vectors to the planes
-    n1 = np.cross(v1, v2)
-    n2 = np.cross(v2, v3)
-    
-    # Normalize
-    n1 = n1 / np.linalg.norm(n1)
-    n2 = n2 / np.linalg.norm(n2)
-    
-    # Dihedral angle
-    cos_angle = np.clip(np.dot(n1, n2), -1.0, 1.0)
-    angle = np.arccos(cos_angle)
-    
-    # Check sign
-    if np.dot(np.cross(n1, n2), v2) < 0:
-        angle = -angle
-    
-    return angle
 
-
-def center_of_mass(positions: np.ndarray, masses: np.ndarray = None) -> np.ndarray:
-    """
-    Calculate center of mass of a set of points.
-    
-    Args:
-        positions: Array of shape (n, 3) containing 3D coordinates.
-        masses: Optional array of masses. If None, assumes equal masses.
-        
-    Returns:
-        Center of mass coordinates.
-    """
-    if masses is None:
-        return np.mean(positions, axis=0)
-    else:
-        return np.average(positions, axis=0, weights=masses)
-
-
-def moment_of_inertia_tensor(positions: np.ndarray, 
-                           masses: np.ndarray = None) -> np.ndarray:
-    """
-    Calculate moment of inertia tensor.
-    
-    Args:
-        positions: Array of shape (n, 3) containing 3D coordinates.
-        masses: Optional array of masses. If None, assumes equal masses.
-        
-    Returns:
-        3x3 moment of inertia tensor.
-    """
-    if masses is None:
-        masses = np.ones(len(positions))
-    
-    # Center at origin
-    com = center_of_mass(positions, masses)
-    centered_positions = positions - com
-    
-    # Calculate tensor elements
-    I = np.zeros((3, 3))
-    
-    for i, (pos, mass) in enumerate(zip(centered_positions, masses)):
-        x, y, z = pos
-        I[0, 0] += mass * (y**2 + z**2)
-        I[1, 1] += mass * (x**2 + z**2)
-        I[2, 2] += mass * (x**2 + y**2)
-        I[0, 1] -= mass * x * y
-        I[0, 2] -= mass * x * z
-        I[1, 2] -= mass * y * z
-    
-    # Make symmetric
-    I[1, 0] = I[0, 1]
-    I[2, 0] = I[0, 2]
-    I[2, 1] = I[1, 2]
-    
-    return I

@@ -20,10 +20,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 __version__ = "0.1.0"
 __author__ = "MofBuilder Contributors"
-__email__ = "mofbuilder@example.com"
+__email__ = "chenxili@kth.se"
 __license__ = "LGPL-3.0-or-later"
 
 # Import main modules for convenient access
-from . import analysis, core, io, utils, visualization
+from . import analysis, core, io, utils, visualization,md
 
-__all__ = ["core", "io", "utils", "analysis", "visualization", "__version__"]
+__all__ = ["core", "io", "utils", "analysis", "visualization", "md", "__version__"]
