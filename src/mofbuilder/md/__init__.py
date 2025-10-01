@@ -18,7 +18,9 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .forcefield import ForceFieldProcessor
-from .setup import MDSetup
+#from .forcefield import LinkerForceFieldProcessor
+#from .linkerforcefield import ForceFieldMapper
+#from .merge_gmxff import GromacsForcefieldMerger
+#from .setup import MDSetup
 
-__all__ = ["ForceFieldProcessor", "MDSetup"]
+#__all__ = ["LinkerForceFieldProcessor", "MDSetup","GromacsForcefieldMerger"]

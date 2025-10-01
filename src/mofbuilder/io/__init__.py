@@ -26,8 +26,9 @@ from .pdb_reader import PdbReader
 from .pdb_writer import PdbWriter
 from .gro_reader import GroReader
 from .gro_writer import GroWriter
+from .basic import nn,nl
 
 __all__ = [
     "CifReader", "CifWriter", "XyzReader", "XyzWriter", "PdbReader",
-    "PdbWriter", "GroReader", "GroWriter"
+    "PdbWriter", "GroReader", "GroWriter","nn","nl"
 ]

@@ -268,7 +268,9 @@ class MofWriter:
                     continue
                 node_f_data = get_node_fcoords_data(n, rG)
                 cG.nodes[n]["f_data"] = node_f_data
-                self.ostream.print_info(f"node {n} f_data shape: {node_f_data.shape}")
+                if self._debug:
+                    self.ostream.print_info(f"node {n} f_data shape: {node_f_data.shape}")
+                    self.ostream.flush()
                 nodes_data.append(node_f_data)
                 #check if the node have terminations
 
