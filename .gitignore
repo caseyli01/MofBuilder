@@ -220,3 +220,8 @@ mofbuilder_output.gro
 *.tpr
 *.trr
 *.1#
+*.json
+Makefile
+test.ipynb
+tests/database/.DS_Store
+tests/database/.DS_Store
