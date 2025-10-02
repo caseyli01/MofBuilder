@@ -528,7 +528,6 @@ class FrameLinker:
             self.check_dirs()
             self.molecule = Molecule.read_xyz_file(self.filename)
         else:
-            self.check_dirs(passfilecheck=True)
             self.molecule = molecule
 
         self.process_linker_molecule(self.molecule, self.linker_connectivity)

@@ -130,8 +130,8 @@ class Framework:
 
         #defects
         #need to be set by user
-        self.remove = []
-        self.exchange = []
+        self.remove_indices = []
+        self.exchange_indices = []
         self.neutral_system = True  #default keep the system neutral when making defects
         self.exchange_linker_pdbfile = None
         self.exchange_node_pdbfile = None
@@ -411,12 +411,43 @@ class Framework:
             self.ostream.flush()
         
 
-    def exchange_defects(self, graph):
+    def build(self):
+        self.read_framework()
+        self.optimize_framework()
+        self.make_supercell()
+        if self.termination:
+            self.defectgenerator.termination_data = self.termination_data
+            self.defectgenerator.termination_X_data = self.termination_X_data
+            self.defectgenerator.termination_Y_data = self.termination_Y_data
+            self.defectgenerator.cleaved_eG = self.cleaved_eG.copy()
+            self.defectgenerator.linker_connectivity = self.linker_connectivity
+            self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+            self.defectgenerator._debug = self._debug
+            self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
+            self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
+            self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
+            self.defectgenerator.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
+            self.defectgenerator.clean_unsaturated_linkers = self.clean_unsaturated_linkers
+            self.defectgenerator.update_node_termination = self.update_node_termination
+            self.defectgenerator.saved_unsaturated_linker = self.edgegraphbuilder.unsaturated_linkers
+            self.defectgenerator.matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
+            self.defectgenerator.xoo_dict = self.edgegraphbuilder.xoo_dict
+            self.defectgenerator.use_termination = self.termination
+            self.defectgenerator.unsaturated_linkers = self.edgegraphbuilder.unsaturated_linkers
+            self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
+            #remove
+            rmG = self.defectgenerator.remove_items_or_terminate(
+                cleaved_eG=self.cleaved_eG.copy())
+            return rmG.copy()
+
+        return self.cleaved_eG.copy()
+
+    def exchange_defects(self, graph, exchange_indices=[],exchange_node_pdbfile=None, exchange_linker_pdbfile=None, exchange_linker_molecule=None):
         self.defectgenerator.cleaved_eG = graph.copy()
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.linker_connectivity = self.linker_connectivity
         self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-        self.defectgenerator._debug = False
+        self.defectgenerator._debug = self._debug
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
@@ -426,19 +457,22 @@ class Framework:
         self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
 
         #exchange
-        if self.exchange_node_pdbfile is not None:
+        if exchange_node_pdbfile is not None:
+            self.exchange_node_pdbfile = exchange_node_pdbfile
             #use pdbreader to read the exchange node pdb files
             pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
             self.defectgenerator.exchange_node_data = pdbreader.read_pdb(
                 filepath=self.exchange_node_pdbfile)
             self.defectgenerator.exchange_node_X_data = pdbreader.X_data
-        if self.exchange_linker_pdbfile is not None:
+        if exchange_linker_pdbfile is not None:
+            self.exchange_linker_pdbfile = exchange_linker_pdbfile
             #use pdbreader to read the exchange linker pdb files
             pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
             self.defectgenerator.exchange_linker_data = pdbreader.read_pdb(
                 filepath=self.exchange_linker_pdbfile)
             self.defectgenerator.exchange_linker_X_data = pdbreader.X_data
-        if self.exchange_linker_molecule is not None:
+        if exchange_linker_molecule is not None:
+            self.exchange_linker_molecule = exchange_linker_molecule
             #use the molecule directly
             fr_ex_linker = FrameLinker(comm=self.comm, ostream=self.ostream)
             fr_ex_linker.linker_connectivity = self.linker_connectivity
@@ -472,11 +506,14 @@ class Framework:
 
             self.defectgenerator.exchange_linker_data = ex_linker_center_data
             self.defectgenerator.exchange_linker_X_data = ex_linker_center_X_data
-
-        exG = self.defectgenerator.exchange_items(self.exchange, graph)
+        if exchange_indices:
+            self.exchange_indices = exchange_indices
+        exG = self.defectgenerator.exchange_items(self.exchange_indices, graph)
         return exG.copy()
 
-    def remove_defects(self, graph):
+    def remove_defects(self, graph, remove_indices=[]):
+        if remove_indices:
+            self.remove_indices = remove_indices
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.termination_data = self.termination_data
         self.defectgenerator.termination_X_data = self.termination_X_data
@@ -500,7 +537,7 @@ class Framework:
         self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
         #remove
         rmG = self.defectgenerator.remove_items_or_terminate(
-            self.remove, graph)
+            self.remove_indices, graph)
         return rmG.copy()
 
     def write(self, G=None, format=["pdb"], filename=None):

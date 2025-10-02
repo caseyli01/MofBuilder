@@ -227,7 +227,7 @@ class GromacsForcefieldMerger():
         all_secs = self._extract_atomstypes(itp_path)
         unique_atomtypes = self._get_unique_atomtypes(all_secs)
         middlelines, sectorname = self._parsetop(
-            data_path + "/nodes_itps/template.top")  # fetch template.top
+            str(Path(data_path, "nodes_itps/template.top")))  # fetch template.top
 
         top_res_lines = []
         for resname in list(res_info):
