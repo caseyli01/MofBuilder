@@ -69,12 +69,11 @@ class NetOptimizer:
         # Optimization parameters
         self.opt_drv = OptimizationDriver(comm=self.comm, ostream=self.ostream)
         self.opt_drv.pname_set_dict = None  #to be set later
-        self.opt_drv.opt_method = 'L-BFGS-B'
-        self.opt_drv.maxfun = 15000
-        self.opt_drv.maxiter = 15000
-        self.opt_drv.display = True
-        self.opt_drv.eps = 1e-8
-        self.opt_drv.iprint = -1
+        #self.opt_drv.opt_method = 'L-BFGS-B'
+        #self.opt_drv.maxfun = 15000
+        #self.opt_drv.maxiter = 15000
+        #self.opt_drv.display = True
+        #self.opt_drv.eps = 1e-8
 
         #other parameters
         self._debug = False
@@ -483,7 +482,7 @@ class NetOptimizer:
                 self.ostream.print_info("the edge lengths are close")
             else:
                 self.ostream.print_info("the edge lengths are not close")
-            self.ostream.print_info(set(lengths))
+            self.ostream.print_info(str(set(lengths)))
         return edge_lengths, set(lengths)
 
     def _apply_rot2atoms_pos(self, optimized_rotations, G, node_X_pos_dict):
@@ -670,7 +669,6 @@ class OptimizationDriver:
         self.maxiter = 15000
         self.display = True
         self.eps = 1e-8
-        self.iprint = -1
 
         self._debug = False
 
@@ -707,10 +705,11 @@ class OptimizationDriver:
             rotated_i_positions = (
                 np.dot(static_atom_positions[i][:, 1:] - com_i, R_i.T) + com_i)
 
-            dist_matrix = np.empty((len(rotated_i_positions), 1))
-            for idx_i in range(len(rotated_i_positions)):
-                dist = np.linalg.norm(rotated_i_positions[idx_i] - com_j)
-                dist_matrix[idx_i, 0] = dist
+            #dist_matrix = np.empty((len(rotated_i_positions), 1))
+            #for idx_i in range(len(rotated_i_positions)):
+            #    dist = np.linalg.norm(rotated_i_positions[idx_i] - com_j)
+            #    dist_matrix[idx_i, 0] = dist
+            dist_matrix = np.linalg.norm(rotated_i_positions - com_j, axis=1, keepdims=True)
                 # total_distance += dist ** 2
             if np.argmin(dist_matrix) > 1:
                 total_distance += 1e4  # penalty for the distance difference
@@ -741,6 +740,26 @@ class OptimizationDriver:
                                             self.sorted_nodes)
         total_distance = 0.0
 
+        #for i, j in self.sorted_edges:
+        #    R_i = reorthogonalize_matrix(rotation_matrices[i])
+        #    R_j = reorthogonalize_matrix(rotation_matrices[j])
+#
+        #    com_i = G.nodes[self.sorted_nodes[i]]["ccoords"]
+        #    com_j = G.nodes[self.sorted_nodes[j]]["ccoords"]
+
+            # Rotate positions around their mass center
+            #rotated_i_positions = (
+            #    np.dot(static_atom_positions[i][:, 1:] - com_i, R_i.T) + com_i)
+            #rotated_j_positions = (
+            #    np.dot(static_atom_positions[j][:, 1:] - com_j, R_j.T) + com_j)
+#
+            #dist_matrix = np.empty(
+            #    (len(rotated_i_positions), len(rotated_j_positions)))
+            #for idx_i in range(len(rotated_i_positions)):
+            #    for idx_j in range(len(rotated_j_positions)):
+            #        dist = np.linalg.norm(rotated_i_positions[idx_i] -
+            #                              rotated_j_positions[idx_j])
+            #        dist_matrix[idx_i, idx_j] = dist
         for i, j in self.sorted_edges:
             R_i = reorthogonalize_matrix(rotation_matrices[i])
             R_j = reorthogonalize_matrix(rotation_matrices[j])
@@ -750,17 +769,17 @@ class OptimizationDriver:
 
             # Rotate positions around their mass center
             rotated_i_positions = (
-                np.dot(static_atom_positions[i][:, 1:] - com_i, R_i.T) + com_i)
+                np.dot(static_atom_positions[i][:, 1:] - com_i, R_i.T) + com_i
+            )  # shape (Ni, 3)
             rotated_j_positions = (
-                np.dot(static_atom_positions[j][:, 1:] - com_j, R_j.T) + com_j)
+                np.dot(static_atom_positions[j][:, 1:] - com_j, R_j.T) + com_j
+            )  # shape (Nj, 3)
 
-            dist_matrix = np.empty(
-                (len(rotated_i_positions), len(rotated_j_positions)))
-            for idx_i in range(len(rotated_i_positions)):
-                for idx_j in range(len(rotated_j_positions)):
-                    dist = np.linalg.norm(rotated_i_positions[idx_i] -
-                                          rotated_j_positions[idx_j])
-                    dist_matrix[idx_i, idx_j] = dist
+            # Vectorized pairwise distance matrix
+            diff = rotated_i_positions[:, None, :] - rotated_j_positions[None, :, :]  
+            # shape (Ni, Nj, 3)
+
+            dist_matrix = np.linalg.norm(diff, axis=2) 
 
             if np.argmin(dist_matrix) > 1:
                 total_distance += 1e4  # penalty for the distance difference
@@ -791,7 +810,6 @@ class OptimizationDriver:
         self.ostream.print_info(f"maxiter:, {self.maxiter}")
         self.ostream.print_info(f"display:, {self.display}")
         self.ostream.print_info(f"eps:, {self.eps}")
-        self.ostream.print_info(f"iprint:, {self.iprint}")
         self.ostream.print_info(f"Number of nodes to optimize:, {num_nodes}")
         self.ostream.print_info("\n")
         self.ostream.print_separator()
@@ -815,7 +833,6 @@ class OptimizationDriver:
                 "maxiter": self.maxiter,
                 "disp": self.display,
                 "eps": self.eps,
-                "iprint": self.iprint,
                 "maxls": 50,
             },
         )
@@ -860,7 +877,6 @@ class OptimizationDriver:
                 "maxiter": self.maxiter,
                 "disp": self.display,
                 "eps": self.eps,
-                "iprint": self.iprint,
             },
         )
 
