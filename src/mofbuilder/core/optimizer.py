@@ -478,7 +478,7 @@ class NetOptimizer:
             self.ostream.print_warning(
                 "Warning: more than one type of edge length")
             # if the length are close, which can be shown by std
-            if np.std(lengths) < 0.1:
+            if np.std(lengths) < 1: #1 Angstrom
                 self.ostream.print_info("the edge lengths are close")
             else:
                 self.ostream.print_info("the edge lengths are not close")

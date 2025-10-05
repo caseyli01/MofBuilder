@@ -88,11 +88,12 @@ class GromacsForcefieldMerger():
 
 
         # copy EDGE(/TERM) itps
-        for j in Path(self.linker_itp_dir).rglob('*.itp'):
-            itp_name = j.stem
-            dest_p = Path(target_itp_path,j.name)
-            if itp_name == Path(self.linker_name).stem:
-                self._copy_file(j, dest_p)
+        if self.linker_itp_dir not in [None, '']:
+            for j in Path(self.linker_itp_dir).rglob('*.itp'):
+                itp_name = j.stem
+                dest_p = Path(target_itp_path,j.name)
+                if itp_name == Path(self.linker_name).stem:
+                    self._copy_file(j, dest_p)
 
         # copy TERM itp
         for k in Path(data_path, 'terminations_itps').rglob('*.itp'):
@@ -297,7 +298,7 @@ class GromacsForcefieldMerger():
         model_name = self.mof_name
 
         self._get_itps_from_database()
-        self._generate_top_file(itps_path,database_path,res_info,model_name)
+        self.top_path = self._generate_top_file(itps_path,database_path,res_info,model_name)
         self._copy_mdps()
 
 
