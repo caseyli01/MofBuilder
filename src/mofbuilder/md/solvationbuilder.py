@@ -38,7 +38,7 @@ class SolventPacker:
                      float(parts[3])])
         return labels, np.array(coords)
 
-    def generate_candidates_each_solvent(self,
+    def _generate_candidates_each_solvent(self,
                                          solvent_coords,
                                          solvent_labels,
                                          solvent_n_atoms,
@@ -70,7 +70,7 @@ class SolventPacker:
 
         return candidates, labels, residue_idx
 
-    def remove_overlaps_kdtree(self, existing_coords, candidate_coords,
+    def _remove_overlaps_kdtree(self, existing_coords, candidate_coords,
                                candidate_residues):
         candidate_residues = candidate_residues.reshape(-1)
 
@@ -101,7 +101,7 @@ class SolventPacker:
         drop_mask = ~keep_mask
         return keep_mask, drop_mask
 
-    def cluster_candidates(self, candidate_coords, candidate_residues,
+    def _cluster_candidates(self, candidate_coords, candidate_residues,
                            cluster_radius):
         candidate_residues = candidate_residues.reshape(-1)
         unique_residues = np.unique(candidate_residues)
@@ -121,7 +121,7 @@ class SolventPacker:
 
         return accepted_centers, accepted_residues
 
-    def generate_candidates(self, sol_dict, target_number, res_start=0):
+    def _generate_candidates(self, sol_dict, target_number, res_start=0):
 
         all_data = {}
         all_sol_mols = []
@@ -147,7 +147,7 @@ class SolventPacker:
             #solvents_dict[solvent_name]['extended_residue_idx'] = np.empty((0, all_candidates_data['atoms_number']), dtype=bool)
             _target_mol_number = all_sol_mols[i]
 
-            candidates, labels, residue_idx = self.generate_candidates_each_solvent(
+            candidates, labels, residue_idx = self._generate_candidates_each_solvent(
                 sol_dict[solvent_name]['coords'],
                 sol_dict[solvent_name]['labels'],
                 sol_dict[solvent_name]['n_atoms'],
@@ -226,7 +226,7 @@ class SolventPacker:
 
             #reset extended residue idx for each solvent at the start of each trial
             # --- Generate initial solvent candidates ---
-            all_candidates_data, solvents_dict, res_start_idx = self.generate_candidates(
+            all_candidates_data, solvents_dict, res_start_idx = self._generate_candidates(
                 solvents_dict, total_number, res_start=0)
 
             all_candidate_coords = all_candidates_data['coords'].astype(float)
@@ -242,7 +242,7 @@ class SolventPacker:
 
             keep_masks = np.empty((0), dtype=bool)
             # --- Round 1 overlap removal ---
-            keep_mask, drop_mask = self.remove_overlaps_kdtree(
+            keep_mask, drop_mask = self._remove_overlaps_kdtree(
                 solute_coords, all_candidate_coords, all_candidate_residues)
 
             accepted_coords = all_candidate_coords[keep_mask]
@@ -264,20 +264,20 @@ class SolventPacker:
             round_idx = 0
             while round_idx < max_fill_rounds and cavity_coords.shape[0] > 0:
                 round_idx += 1
-                possible_centers, _ = self.cluster_candidates(
+                possible_centers, _ = self._cluster_candidates(
                     cavity_coords, cavity_residues, cluster_radius=self.buffer)
 
                 if possible_centers.shape[0] == 0:
                     break
 
-                round_all_candidates_data, solvents_dict, _ = self.generate_candidates(
+                round_all_candidates_data, solvents_dict, _ = self._generate_candidates(
                     solvents_dict,
                     target_number=possible_centers.shape[0],
                     res_start=res_start_idx)
 
                 residue_idx += possible_centers.shape[0]
 
-                round_keep_mask, round_drop_mask = self.remove_overlaps_kdtree(
+                round_keep_mask, round_drop_mask = self._remove_overlaps_kdtree(
                     accepted_coords, round_all_candidates_data['coords'],
                     round_all_candidates_data['residue_idx'])
 
@@ -495,4 +495,4 @@ if __name__ == "__main__":
         target_solvents_numbers=[20, 0],
         output_file="1solvated_structure.xyz",
         trial_rounds=300)
-    print(best_solvents_dict)
+    #print(best_solvents_dict)

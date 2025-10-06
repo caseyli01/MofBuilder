@@ -132,7 +132,8 @@ class LinkerForceFieldGenerator:
             self.linker_itp_path = Path(self.target_directory, Path(self.linker_ff_name).with_suffix('.itp'))
             ffname = str(self.linker_itp_path).removesuffix('.itp')
             ff_gen.create_topology(opt_linker_mol, resp=True)
-            ff_gen.write_gromacs_files(filename=ffname)
+            Path(self.linker_itp_path).parent.mkdir(parents=True, exist_ok=True)
+            ff_gen.write_gromacs_files(filename=ffname,mol_name=self.linker_residue_name)
 
     def _reconnect(self,
                    X_indices_coords,
