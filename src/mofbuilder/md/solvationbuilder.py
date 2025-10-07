@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial import cKDTree
+from scipy.cluster.hierarchy import fclusterdata
 
 
 def safe_dict_copy(d):
@@ -36,29 +37,42 @@ class SolventPacker:
                     [float(parts[1]),
                      float(parts[2]),
                      float(parts[3])])
-        return labels, np.array(coords)
+        com = np.mean(coords, axis=0)
+        coords = np.array(coords) - com  # center at origin
+        return labels, coords
 
     def _generate_candidates_each_solvent(self,
-                                         solvent_coords,
-                                         solvent_labels,
-                                         solvent_n_atoms,
-                                         target_mol_number,
-                                         residue_idx_start=0,
-                                         points_template=None):
+                                          solvent_coords,
+                                          solvent_labels,
+                                          solvent_n_atoms,
+                                          target_mol_number,
+                                          residue_idx_start=0,
+                                          points_template=None,
+                                          rot=True):
 
         if points_template is None:
             random_points = np.random.rand(target_mol_number,
                                            3) * self.box_size
         else:
-            random_points = points_template
+            if points_template.shape[0] < target_mol_number:
+                #add random points to fill the rest
+                n_additional = target_mol_number - points_template.shape[0]
+                additional_points = np.random.rand(n_additional,
+                                                   3) * self.box_size
+                random_points = np.vstack((points_template, additional_points))
+            else:
+                random_points = points_template
         target_mol_number = random_points.shape[0]
         if target_mol_number == 0:
-            return np.empty((0, 3)), np.empty((0, 1)), np.empty((0, 1))
-
-        rots = R.random(target_mol_number).as_matrix()
-        coords_exp = solvent_coords[np.newaxis, :, :]
-        rot_coords = np.matmul(coords_exp, rots.transpose(0, 2, 1))
-        candidates = rot_coords.reshape(-1, 3)
+            return np.empty((0, 3)), np.empty((0, 3)), np.empty(
+                (0, 1)), np.empty((0, 1))
+        if rot:
+            rots = R.random(target_mol_number).as_matrix()
+            coords_exp = solvent_coords[np.newaxis, :, :]
+            rot_coords = np.matmul(coords_exp, rots.transpose(0, 2, 1))
+            candidates = rot_coords.reshape(-1, 3)
+        else:
+            candidates = np.tile(solvent_coords, (target_mol_number, 1))
         candidates += np.repeat(random_points, solvent_n_atoms, axis=0)
 
         labels = np.array(list(solvent_labels) * target_mol_number).reshape(
@@ -68,10 +82,10 @@ class SolventPacker:
                       residue_idx_start + target_mol_number),
             solvent_n_atoms).reshape(-1, 1)
 
-        return candidates, labels, residue_idx
+        return random_points, candidates, labels, residue_idx
 
     def _remove_overlaps_kdtree(self, existing_coords, candidate_coords,
-                               candidate_residues):
+                                candidate_residues):
         candidate_residues = candidate_residues.reshape(-1)
 
         # Round 1: overlap with existing atoms
@@ -102,26 +116,35 @@ class SolventPacker:
         return keep_mask, drop_mask
 
     def _cluster_candidates(self, candidate_coords, candidate_residues,
-                           cluster_radius):
+                            cluster_radius):
         candidate_residues = candidate_residues.reshape(-1)
         unique_residues = np.unique(candidate_residues)
         centers = np.array([
             candidate_coords[candidate_residues == res].astype(
                 np.float32).mean(axis=0) for res in unique_residues
-        ])
-
-        diff = centers[:, None, :] - centers[None, :, :]
-        dist2 = np.sum(diff**2, axis=2)
-        neighbors_mask = dist2 < cluster_radius**2
+        ])  #
+        diff = centers[:, None, :] - centers[None, :, :]  #
+        dist2 = np.sum(diff**2, axis=2)  ##############
+        neighbors_mask = dist2 < cluster_radius**2  #
         np.fill_diagonal(neighbors_mask, False)
-
         isolated_mask = ~np.any(neighbors_mask, axis=1)
         accepted_centers = centers[isolated_mask]
         accepted_residues = unique_residues[isolated_mask]
 
         return accepted_centers, accepted_residues
 
-    def _generate_candidates(self, sol_dict, target_number, res_start=0):
+    def _generate_candidates(self,
+                             sol_dict,
+                             target_number,
+                             res_start=0,
+                             points_template=None,
+                             rot=True):
+        '''
+        return all_data, sol_dict, res_start
+        all_data: dict with keys 'coords', 'labels', 'residue_idx', 'atoms_number'
+        sol_dict: updated sol_dict with keys 'extended_residue_idx', 'extended_com_points'
+        res_start: updated res_start by adding target_number molecules
+        '''
 
         all_data = {}
         all_sol_mols = []
@@ -142,17 +165,38 @@ class SolventPacker:
         all_data['labels'] = np.empty((0, 1))
         all_data['residue_idx'] = np.empty((0, 1))
         start_idx = 0
-
+        if target_number == 0:
+            return all_data, sol_dict, res_start, np.empty((0, 3))
+        if points_template is not None:
+            if points_template.shape[0] < target_number:
+                #add random points to fill the rest
+                n_additional = target_number - points_template.shape[0]
+                additional_points = np.random.rand(n_additional,
+                                                    3) * self.box_size      
+                points_template = np.vstack((points_template, additional_points))
+            if points_template.shape[0] > target_number:
+                points_template = points_template[:target_number] 
+        all_res_com_random_points = np.empty((0, 3))
         for i, solvent_name in enumerate(sol_dict):
             #solvents_dict[solvent_name]['extended_residue_idx'] = np.empty((0, all_candidates_data['atoms_number']), dtype=bool)
             _target_mol_number = all_sol_mols[i]
 
-            candidates, labels, residue_idx = self._generate_candidates_each_solvent(
+            com_random_points, candidates, labels, residue_idx = self._generate_candidates_each_solvent(
                 sol_dict[solvent_name]['coords'],
                 sol_dict[solvent_name]['labels'],
                 sol_dict[solvent_name]['n_atoms'],
                 _target_mol_number,
-                residue_idx_start=res_start)
+                residue_idx_start=res_start,
+                points_template=points_template[sum(all_sol_mols[:i]
+                                                    ):sum(all_sol_mols[:i +
+                                                                       1])]
+                if points_template is not None else None,
+                rot=rot
+            )
+            #each res_com_random_points is the center of each solvent molecule in candidates
+            #expand res_com_random_points to match the number of atoms in candidates
+            res_com_random_points = np.repeat(
+                com_random_points, sol_dict[solvent_name]['n_atoms'], axis=0)
             # Create a mask for the solvent with True values for the current residue indices
             ex_residue_idx = np.zeros((sum(all_sol_atoms_num), 1), dtype=bool)
 
@@ -166,13 +210,33 @@ class SolventPacker:
             sol_dict[solvent_name]['extended_residue_idx'] = np.vstack(
                 (sol_dict[solvent_name]['extended_residue_idx'],
                  ex_residue_idx))
+            all_res_com_random_points = np.vstack((all_res_com_random_points, res_com_random_points))
 
             all_data['coords'] = np.vstack((all_data['coords'], candidates))
             all_data['labels'] = np.vstack((all_data['labels'], labels))
             all_data['residue_idx'] = np.vstack(
                 (all_data['residue_idx'], residue_idx))
 
-        return all_data, sol_dict, res_start
+        return all_data, sol_dict, res_start, all_res_com_random_points
+
+    def _initialize_solvents_dict(self, solvents_files,
+                                  target_solvents_numbers, total_number):
+
+        solvents_dict = {}
+        for i, solvent_name in enumerate(solvents_files):
+            solvent_file = solvents_files[i]
+            solvent_labels, solvent_coords = self.read_xyz(solvent_file)
+            solvents_dict[solvent_name] = {
+                'file': solvent_file,
+                'labels': solvent_labels,
+                'coords': solvent_coords,
+                'n_atoms': len(solvent_labels),
+                'ratio': target_solvents_numbers[i] / total_number,
+                'target_molecules_number': target_solvents_numbers[i],
+                'extended_residue_idx': np.empty((0, 1), dtype=bool),
+                'extended_com_points': np.empty((0, 3), dtype=float)
+            }
+        return solvents_dict
 
     def solvate(
             self,
@@ -183,36 +247,21 @@ class SolventPacker:
             trial_rounds=10):
 
         # --- read solute and solvents ---
-        original_solvents_dict = {}
+
         #calculate the ratio of each solvent
         total_number = sum(target_solvents_numbers)
         if total_number == 0:
             print("No solvents to add.")
             return
-        residue_idx = 0
-
-        for i, solvent_name in enumerate(solvents_files):
-            solvent_file = solvents_files[i]
-            solvent_labels, solvent_coords = self.read_xyz(solvent_file)
-            original_solvents_dict[solvent_name] = {
-                'file': solvent_file,
-                'labels': solvent_labels,
-                'coords': solvent_coords,
-                'n_atoms': len(solvent_labels),
-                'ratio': target_solvents_numbers[i] / total_number,
-                'target_molecules_number': target_solvents_numbers[i],
-                'extended_residue_idx': np.empty((0, 1), dtype=bool)
-            }
-        #print("Solvent ratios:", {
-        #    k: original_solvents_dict[k]['ratio']
-        #    for k in original_solvents_dict
-        #})
-
+        #LOAD solute and solvents
+        original_solvents_dict = self._initialize_solvents_dict(
+            solvents_files, target_solvents_numbers, total_number)
         solute_labels, solute_coords = self.read_xyz(solute_file)
 
         best_accepted_coords = None
         best_accepted_labels = None
         max_added = 0
+        residue_idx = 0
 
         # --- Trial loop for random seeds ---
         for trial in range(trial_rounds):
@@ -226,8 +275,19 @@ class SolventPacker:
 
             #reset extended residue idx for each solvent at the start of each trial
             # --- Generate initial solvent candidates ---
-            all_candidates_data, solvents_dict, res_start_idx = self._generate_candidates(
-                solvents_dict, total_number, res_start=0)
+            #points template should be cubic grid points with spacing of buffer, avoid boundary
+            grid_spacing =  self.buffer
+            x_points = np.arange(0 + 2*grid_spacing, self.box_size[0] - 2*grid_spacing, 5*grid_spacing)
+            y_points = np.arange(0 + 5*grid_spacing, self.box_size[1] - 5*grid_spacing, 5*grid_spacing)
+            z_points = np.arange(0 + grid_spacing, self.box_size[2] - grid_spacing, 5*grid_spacing)
+            xx, yy, zz = np.meshgrid(x_points, y_points, z_points)
+            points_template = np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T
+
+            #print(f"INITIAL Generated {points_template.shape[0]} template points for solvent placement.")
+            #shuffle the points template
+
+            all_candidates_data, solvents_dict, res_start_idx, all_res_com_points = self._generate_candidates(
+                solvents_dict, total_number*1, res_start=0,points_template=None,rot=True)
 
             all_candidate_coords = all_candidates_data['coords'].astype(float)
             all_candidate_labels = all_candidates_data['labels']
@@ -248,6 +308,7 @@ class SolventPacker:
             accepted_coords = all_candidate_coords[keep_mask]
             accepted_labels = all_candidate_labels[keep_mask]
             accepted_residues = all_candidate_residues[keep_mask]
+            print(f"Initial: {len(set(accepted_residues.flatten()))} added")
 
             keep_masks = np.r_[keep_masks, keep_mask]
 
@@ -255,31 +316,67 @@ class SolventPacker:
             cavity_residues = all_candidate_residues[drop_mask]
             #count accepted water and dmso based on residue idx
 
-            print(
-                f"After Round 1 overlap removal: {len(set(accepted_residues.flatten()))} accepted, {len(set(cavity_residues.flatten()))} left in cavity."
-            )
-
             # --- Iterative cavity filling (big round) ---
             max_fill_rounds = self.max_fill_rounds
             round_idx = 0
+            round_drop_mask = None
+            #round_keep_mask = None
+            resistance = 1.1
             while round_idx < max_fill_rounds and cavity_coords.shape[0] > 0:
                 round_idx += 1
-                possible_centers, _ = self._cluster_candidates(
-                    cavity_coords, cavity_residues, cluster_radius=self.buffer)
+                print(f"starting round {round_idx}...")
+                #possible_centers, _ = self._cluster_candidates(
+                #    cavity_coords, cavity_residues, cluster_radius=self.buffer)
+                #the centers that generated by randomly  but do not have buffer distance with each other
+                #use solvent_dict and drop mask and extended_com_points and extended_residue_idx to find the possible centers
+                #any solvent
+                pick_solvent_name = list(solvents_dict.keys())[0]
+                if round_drop_mask is not None: ## to drop
+                    drop_centers = np.unique(all_res_com_points[round_drop_mask], #to drop
+                                            axis=0)
+                else:
+                    drop_centers = np.unique(all_res_com_points[drop_mask],
+                                            axis=0)
+                #use kdtree to find the isolated centers that away from each other by cluster_radius**2
+                #tree_centers = cKDTree(drop_centers)
+                #neighbors_centers = tree_centers.query_ball_point(drop_centers,
+                #neigh_pairs = tree_centers.query_pairs(r=self.buffer)
+                #if len(neigh_pairs) > 0:
+                #    neigh_pairs_arr = np.array(list(neigh_pairs))
+                #    i_idx = neigh_pairs_arr[:, 0]
+                #    j_idx = neigh_pairs_arr[:, 1]
+                #    #shuffle the order of i_idx and j_idx
+                #    np.random.shuffle(i_idx)
+                #    np.random.shuffle(j_idx)
+                #    #i can only be used once, j can only be used once
+                #    drop_middle_points = (drop_centers[i_idx] +
+                #                        drop_centers[j_idx]) / 2.0
+                #    drop_middle_points = drop_middle_points[:drop_centers.shape[0]//2]
+                #else:
+                #    drop_middle_points = drop_centers
+                possible_centers = drop_centers
+                #                                                  r=self.buffer)
+                #cavity_center_mask = np.array(
+                #    [len(neigh) > 0 for neigh in neighbors_centers], dtype=bool)
 
+                print(f"1.found possible centers: {possible_centers.shape[0]}")
                 if possible_centers.shape[0] == 0:
                     break
+                #if too many overlap, decrease the number of possible centers 
 
-                round_all_candidates_data, solvents_dict, _ = self._generate_candidates(
+
+                round_all_candidates_data, solvents_dict, _, all_res_com_points = self._generate_candidates(
                     solvents_dict,
-                    target_number=possible_centers.shape[0],
-                    res_start=res_start_idx)
+                    target_number=int(drop_centers.shape[0]*resistance),
+                    res_start=res_start_idx,
+                    points_template=drop_centers[:drop_centers.shape[0]//2]) #debug
 
                 residue_idx += possible_centers.shape[0]
-
+                print(f"Round {round_idx}: start kdtree overlap removal...")
                 round_keep_mask, round_drop_mask = self._remove_overlaps_kdtree(
                     accepted_coords, round_all_candidates_data['coords'],
                     round_all_candidates_data['residue_idx'])
+                print(f"Round {round_idx}: kdtree overlap removal done.")
 
                 candidates_res_idx = np.r_[
                     candidates_res_idx,
@@ -300,6 +397,10 @@ class SolventPacker:
                 print(
                     f"Round {round_idx}: {len(set(round_keep_residues.flatten()))} added, {len(set(round_drop_residues.flatten()))} left in cavity."
                 )
+                keep_res_num = len(set(round_keep_residues.flatten()))
+                drop_res_num = len(set(round_drop_residues.flatten()))
+                if keep_res_num < 20:
+                    resistance = 2 #10*keep_res_num / (drop_res_num + 1) +0.5
 
                 if round_keep_coords.shape[0] == 0:
                     break
@@ -312,10 +413,10 @@ class SolventPacker:
                                           round_keep_residues]
 
                 # Update cavity for next iteration
-                cavity_coords = round_all_candidates_data['coords'][
-                    round_drop_mask]
-                cavity_residues = round_all_candidates_data['residue_idx'][
-                    round_drop_mask]
+                #cavity_coords = round_all_candidates_data['coords'][
+                #    round_drop_mask]
+                #cavity_residues = round_all_candidates_data['residue_idx'][
+                #    round_drop_mask]
 
             # --- Update best trial ---
 
@@ -475,24 +576,38 @@ if __name__ == "__main__":
         n_molecules = int(density * V_cm3 * N_A / molar_mass)
         return n_molecules
 
+
 if __name__ == "__main__":
+    import time
     packer = SolventPacker()
-    packer.box_size = np.array([10, 10, 10])
+    packer.box_size = np.array([100, 100, 100]) # Å
     packer.buffer = 2  # Å
-    packer.max_fill_rounds = 5000
+    packer.max_fill_rounds = 100
+    start_time = time.time()
     best_solvents_dict, best_keep_masks = packer.solvate(
         #solute_file="output/UiO-66_mofbuilder_output.xyz",
-        solute_file="water.xyz",
+        solute_file="dmso.xyz",
         solvents_files=["water.xyz", "dmso.xyz"],
-        target_solvents_numbers=[50, 1],
+        target_solvents_numbers=[000, 8000],
         output_file="solvated_structure.xyz",
-        trial_rounds=300)
-    packer.buffer=6
-    best_solvents_dict, best_keep_masks = packer.solvate(
-        solute_file="solvated_structure.xyz",
-        #solute_file="water.xyz",
-        solvents_files=["water.xyz", "dmso.xyz"],
-        target_solvents_numbers=[20, 0],
-        output_file="1solvated_structure.xyz",
-        trial_rounds=300)
-    #print(best_solvents_dict)
+        trial_rounds=1)
+    print("Total time (s):", time.time() - start_time)
+    
+    import veloxchem as vlx
+    #water = vlx.Molecule.read_xyz_file("water.xyz")
+    dmso = vlx.Molecule.read_xyz_file("dmso.xyz")
+    solb=vlx.SolvationBuilder()
+    solb.write_gromacs_files=True
+    restart_time = time.time()
+    solb.custom_solvate(solute=dmso,solvents=[dmso],quantities=[8000],box=[100,100,100])
+    print("Restart time (s):", time.time() - restart_time)
+
+    #packer.buffer = 6
+    #best_solvents_dict, best_keep_masks = packer.solvate(
+    #    solute_file="solvated_structure.xyz",
+    #    #solute_file="water.xyz",
+    #    solvents_files=["water.xyz", "dmso.xyz"],
+    #    target_solvents_numbers=[200, 0],
+    #    output_file="1solvated_structure.xyz",
+    #    trial_rounds=10)
+    ##print(best_solvents_dict)
