@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import numpy as np
 from veloxchem.outputstream import OutputStream
 from veloxchem.veloxchemlib import mpi_master
 import mpi4py.MPI as MPI
@@ -42,6 +43,8 @@ class GroWriter:
             self.ostream.print_info(f"targeting directory: {self.file_dir}")
         self.file_dir.mkdir(parents=True, exist_ok=True)
 
+
+
         if filepath.suffix != ".gro":
             filepath = filepath.with_suffix(".gro")
         
@@ -52,7 +55,19 @@ class GroWriter:
         last_name = ""
         last_residue_number = 0
         residue_count = 0
+        #wrap box and recenter 
 
+        coords = np.vstack((lines))[:,5:8].astype(float)
+        center = np.mean(coords, axis=0)
+        x_min, y_min, z_min = np.min(coords, axis=0)
+        x_max, y_max, z_max = np.max(coords, axis=0)
+        box_size = np.array([x_max - x_min, y_max - y_min, z_max - z_min])
+        #if original box size is big enough, use it
+        if box is not None:
+            if (box[0] >= box_size[0]) and (box[1] >= box_size[1]) and (box[2] >= box_size[2]):
+                box_size = box
+        if triclinic:
+            assert_msg_critical(len(box) == 6, "Box should have 6 values for triclinic box")
         with open(filepath, "w") as fp:
             # Iterate over each line in the input file
             for i in range(len(lines)):
@@ -66,9 +81,9 @@ class GroWriter:
                 atom_number = i + 1
                 residue_name = values[3].split('_')[0][:3]
                 residue_number = residue_count
-                x = float(values[5])/10  # convert to nm
-                y = float(values[6])/10
-                z = float(values[7])/10
+                x = (float(values[5])-center[0])/10  # convert to nm
+                y = (float(values[6])-center[1])/10
+                z = (float(values[7])-center[2])/10
                 spin = values[8]
                 charge = values[9]
                 note = values[10]
@@ -86,6 +101,6 @@ class GroWriter:
             if triclinic:
                 tail = f"{float(box[0])/10:.6f} {float(box[1])/10:.6f} {float(box[2])/10:.6f} {float(box[3]):.2f} {float(box[4]):.2f} {float(box[5]):.2f}\n"
             else:
-                tail = f"{float(box[0])/10:.6f} {float(box[1])/10:.6f} {float(box[2])/10:.6f}\n"
+                tail = f"{float(box_size[0])/10:.6f} {float(box_size[1])/10:.6f} {float(box_size[2])/10:.6f}\n"
             newgro.append(tail)
             fp.writelines(newgro)
