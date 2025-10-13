@@ -124,9 +124,10 @@ class FrameLinker:
     def _find_centers(self, lG):
         barycenter = nx.barycenter(lG)
         normalcenter = nx.center(lG)
+        print(barycenter, normalcenter)
         if set(barycenter).intersection(normalcenter):
             if self._in_same_cycle(lG, normalcenter) is not None:
-                return normalcenter
+                return self._in_same_cycle(lG, normalcenter)
             return barycenter
         return barycenter
 
