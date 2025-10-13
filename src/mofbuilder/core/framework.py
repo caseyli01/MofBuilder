@@ -9,11 +9,6 @@ import mpi4py.MPI as MPI
 import sys
 import time
 
-from ..utils.geometry import (
-    unit_cell_to_cartesian_matrix,
-    fractional_to_cartesian,
-    find_edge_pairings,
-)
 from ..utils.fetch import fetch_pdbfile
 from pathlib import Path
 from .net import FrameNet
@@ -25,13 +20,12 @@ from .optimizer import NetOptimizer
 from .supercell import SupercellBuilder, EdgeGraphBuilder
 from .defects import TerminationDefectGenerator
 from .write import MofWriter
-from ..io.basic import pname, is_list_A_in_B
 from ..io.pdb_reader import PdbReader
-from ..utils.geometry import cartesian_to_fractional, fractional_to_cartesian
-from .superimpose import superimpose_rotation_only
-from ..md.linkerforcefield import LinkerForceFieldGenerator,ForceFieldMapper
+from ..md.linkerforcefield import LinkerForceFieldGenerator
 from ..md.gmxfilemerge import GromacsForcefieldMerger
+from ..md.solvationbuilder import SolvationBuilder
 from ..visualization.viewer import Viewer
+from ..md.setup import OpenmmSetup
 
 
 #sG:scaled and rotated G
@@ -130,8 +124,8 @@ class Framework:
 
         #defects
         #need to be set by user
-        self.remove = []
-        self.exchange = []
+        self.remove_indices = []
+        self.exchange_indices = []
         self.neutral_system = True  #default keep the system neutral when making defects
         self.exchange_linker_pdbfile = None
         self.exchange_node_pdbfile = None
@@ -142,7 +136,14 @@ class Framework:
         self.clean_unsaturated_linkers = True  #default cleave the unsaturated linkers after making defects
 
         #MD preparation
-
+        self.framework_data = None  #merged data for the whole framework, generated in write() 
+        self.solvationbuilder = SolvationBuilder(comm=self.comm, ostream=self.ostream)
+        self.solvents = []  #list of solvent names or xyz files
+        self.solvents_molecules = []  #list of solvent molecules
+        self.solvents_proportions = []  #list of solvent proportions
+        self.solvents_quantities = []  #list of solvent quantities
+        #will be set
+        self.solvated_gro_file = None
         #MD simulation
 
         #others for output and saving
@@ -411,12 +412,43 @@ class Framework:
             self.ostream.flush()
         
 
-    def exchange_defects(self, graph):
+    def build(self):
+        self.read_framework()
+        self.optimize_framework()
+        self.make_supercell()
+        if self.termination:
+            self.defectgenerator.termination_data = self.termination_data
+            self.defectgenerator.termination_X_data = self.termination_X_data
+            self.defectgenerator.termination_Y_data = self.termination_Y_data
+            self.defectgenerator.cleaved_eG = self.cleaved_eG.copy()
+            self.defectgenerator.linker_connectivity = self.linker_connectivity
+            self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
+            self.defectgenerator._debug = self._debug
+            self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
+            self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
+            self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
+            self.defectgenerator.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
+            self.defectgenerator.clean_unsaturated_linkers = self.clean_unsaturated_linkers
+            self.defectgenerator.update_node_termination = self.update_node_termination
+            self.defectgenerator.saved_unsaturated_linker = self.edgegraphbuilder.unsaturated_linkers
+            self.defectgenerator.matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
+            self.defectgenerator.xoo_dict = self.edgegraphbuilder.xoo_dict
+            self.defectgenerator.use_termination = self.termination
+            self.defectgenerator.unsaturated_linkers = self.edgegraphbuilder.unsaturated_linkers
+            self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
+            #remove
+            rmG = self.defectgenerator.remove_items_or_terminate(
+                cleaved_eG=self.cleaved_eG.copy())
+            return rmG.copy()
+
+        return self.cleaved_eG.copy()
+
+    def exchange_defects(self, graph, exchange_indices=[],exchange_node_pdbfile=None, exchange_linker_pdbfile=None, exchange_linker_molecule=None):
         self.defectgenerator.cleaved_eG = graph.copy()
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.linker_connectivity = self.linker_connectivity
         self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-        self.defectgenerator._debug = False
+        self.defectgenerator._debug = self._debug
         self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
         self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
         self.defectgenerator.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
@@ -426,19 +458,22 @@ class Framework:
         self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
 
         #exchange
-        if self.exchange_node_pdbfile is not None:
+        if exchange_node_pdbfile is not None:
+            self.exchange_node_pdbfile = exchange_node_pdbfile
             #use pdbreader to read the exchange node pdb files
             pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
             self.defectgenerator.exchange_node_data = pdbreader.read_pdb(
                 filepath=self.exchange_node_pdbfile)
             self.defectgenerator.exchange_node_X_data = pdbreader.X_data
-        if self.exchange_linker_pdbfile is not None:
+        if exchange_linker_pdbfile is not None:
+            self.exchange_linker_pdbfile = exchange_linker_pdbfile
             #use pdbreader to read the exchange linker pdb files
             pdbreader = PdbReader(comm=self.comm, ostream=self.ostream)
             self.defectgenerator.exchange_linker_data = pdbreader.read_pdb(
                 filepath=self.exchange_linker_pdbfile)
             self.defectgenerator.exchange_linker_X_data = pdbreader.X_data
-        if self.exchange_linker_molecule is not None:
+        if exchange_linker_molecule is not None:
+            self.exchange_linker_molecule = exchange_linker_molecule
             #use the molecule directly
             fr_ex_linker = FrameLinker(comm=self.comm, ostream=self.ostream)
             fr_ex_linker.linker_connectivity = self.linker_connectivity
@@ -472,11 +507,14 @@ class Framework:
 
             self.defectgenerator.exchange_linker_data = ex_linker_center_data
             self.defectgenerator.exchange_linker_X_data = ex_linker_center_X_data
-
-        exG = self.defectgenerator.exchange_items(self.exchange, graph)
+        if exchange_indices:
+            self.exchange_indices = exchange_indices
+        exG = self.defectgenerator.exchange_items(self.exchange_indices, graph)
         return exG.copy()
 
-    def remove_defects(self, graph):
+    def remove_defects(self, graph, remove_indices=[]):
+        if remove_indices:
+            self.remove_indices = remove_indices
         self.defectgenerator.use_termination = self.termination
         self.defectgenerator.termination_data = self.termination_data
         self.defectgenerator.termination_X_data = self.termination_X_data
@@ -500,11 +538,10 @@ class Framework:
         self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
         #remove
         rmG = self.defectgenerator.remove_items_or_terminate(
-            self.remove, graph)
+            self.remove_indices, graph)
         return rmG.copy()
 
-    def write(self, G=None, format=["pdb"], filename=None):
-
+    def write(self, G=None, format=[], filename=None):
         self.mofwriter = MofWriter(comm=self.comm, ostream=self.ostream)
         self.mofwriter.filename = filename if filename is not None else f"{self.mof_family}_mofbuilder_output"
         self.mofwriter.G = self.defectgenerator.finalG if G is None else G.copy(
@@ -516,22 +553,54 @@ class Framework:
         self.mofwriter.target_directory = self.target_directory
         self.mofwriter.supercell_boundary = self.supercell
         self.mofwriter._debug = self._debug
-        if "xyz" in format:
-            self.mofwriter.write_xyz(skip_merge=True)
-        if "pdb" in format:
-            self.mofwriter.write_pdb(skip_merge=True)
-        if "gro" in format:
-            self.mofwriter.write_gro(skip_merge=True)
-        if "cif" in format:
-            self.mofwriter.write_cif(skip_merge=False,
-                                     supercell_boundary=self.supercell,
-                                     frame_cell_info=self.supercell_info)
+        if not format:
+            #generate merged_data #f_merged_data is still in the mofwriter when generate cif
+            self.framework_data=self.mofwriter.only_get_merged_data()
+        else:
+            if "xyz" in format:
+                self.mofwriter.write_xyz(skip_merge=True)
+            if "cif" in format:
+                self.mofwriter.write_cif(skip_merge=False,
+                                        supercell_boundary=self.supercell,
+                                        frame_cell_info=self.supercell_info)
+            if "pdb" in format:
+                self.mofwriter.write_pdb(skip_merge=True)
+            if "gro" in format:
+                self.mofwriter.write_gro(skip_merge=True)
+            
+            self.framework_data=self.mofwriter.merged_data
 
-        self.linker_molecule_data = self.mofwriter.edges_data[0]
+        self.residues_info = self.mofwriter.residues_info
+        self.linker_molecule_data = self.mofwriter.edges_data[0] if self.mofwriter.edges_data else None
         ##write linker data to a file
         #with open(str(Path( self.mof_family + "_linker.xyz")), 'w') as f:
         #    for line in self.mofwriter.edges_data[0]:
         #        f.write(' '.join(map(str, line)) + '\n')
+
+
+    def solvate(self, solvents_files=[], solvents_proportions=[], solvents_quantities=[], box_buffer=10):
+        self.solvationbuilder.solvents_files = solvents_files if solvents_files else self.solvents 
+        self.solvationbuilder.solute_data = self.framework_data
+        self.solvationbuilder.solvents_proportions = solvents_proportions if solvents_proportions else self.solvents_proportions
+        self.solvationbuilder.solvents_quantities = solvents_quantities if solvents_quantities else self.solvents_quantities
+        self.solvationbuilder.target_directory = self.target_directory
+        self.solvationbuilder.box_size = self.supercell_info[0:3] + np.array([box_buffer, box_buffer, box_buffer])
+        self.solvents_dict = self.solvationbuilder.solvate()
+        self.framework_data, self.solvents_data = self.solvationbuilder._update_datalines()
+        #update residue info 
+        def update_residues_info(solvents_dict,residue_info):
+            for k, v in solvents_dict.items():
+               residue_info[k]=v['accepted_quantity']
+            return residue_info
+        if self.solvents_dict is not None:
+            self.residues_info = update_residues_info(self.solvents_dict,self.residues_info)
+        self.solvation_system_data = np.vstack((self.framework_data, self.solvents_data))
+
+        #write solvated system to gro file
+        file_name = f"{self.mof_family}_in_solvent"
+        self.solvationbuilder.write_output(output_file=file_name,format=["gro"])
+        self.solvated_gro_file = str(Path(self.target_directory, file_name + ".gro"))
+
 
     def generate_linker_forcefield(self):
         self.linker_ff_gen = LinkerForceFieldGenerator(comm=self.comm, ostream=self.ostream)
@@ -564,13 +633,11 @@ class Framework:
             f"linker multiplicity is set to {self.linker_ff_gen.linker_multiplicity}"
         )
         self.ostream.flush()
-      
-        self.linker_ff_gen.generate_reconnected_molecule_forcefield(self.mofwriter.edges_data[0])
-        
+        if self.mofwriter.edges_data:
+            self.linker_ff_gen.generate_reconnected_molecule_forcefield(self.mofwriter.edges_data[0])
 
-
-    def md_prepare(self):
-
+    def md_prepare(self, filename=None):
+        #write gro file for the framework
         self.generate_linker_forcefield()
         self.gmx_ff = GromacsForcefieldMerger()
         self.gmx_ff._debug = self._debug
@@ -578,18 +645,35 @@ class Framework:
         self.gmx_ff.target_dir = self.target_directory
         self.gmx_ff.node_metal_type = self.node_metal_type
         self.gmx_ff.dummy_atom_node = self.dummy_atom_node
+        self.gmx_ff.solvents_name = [str(Path(i).stem) for i in self.solvents]
         self.gmx_ff.termination_name = self.termination_filename
         self.gmx_ff.linker_itp_dir = self.target_directory
         self.gmx_ff.linker_name = self.linker_ff_gen.linker_ff_name
-        self.gmx_ff.residues_info = self.mofwriter.residues_info
+        self.gmx_ff.residues_info = self.residues_info
         self.gmx_ff.mof_name = self.mof_family
         self.gmx_ff.generate_MOF_gromacsfile()
+        if self.solvated_gro_file is None:
+            self.ostream.print_warning(f"MOF system is not solvated!")
+            self.ostream.flush()
+            grofile = str(Path(self.target_directory, self.mofwriter.filename + ".gro"))
+            system_pbc = False
+        else:
+            grofile = self.solvated_gro_file
+            system_pbc = True
+        self.ostream.print_info(f"MD input gro file: {grofile}, top file: {self.gmx_ff.top_path}")
+        self.ostream.flush()
+        #setup MD driver
+        self.md_driver = OpenmmSetup(gro_file=grofile, top_file=self.gmx_ff.top_path, comm=self.comm, ostream=self.ostream)
+        self.md_driver.system_pbc = system_pbc
+            # Run EM + NVT + NPT with single continuous PDB trajectory
+
 
     def show(self,w=800,h=600,res_id=True,res_name=True):
         self.viewer= Viewer()
         self.viewer.eG_dict= self.edgegraphbuilder.eG_index_name_dict
         self.viewer.merged_lines =self.mofwriter.merged_data
         self.viewer.lines_show(w,h,res_id,res_name)
+    
 
         
 

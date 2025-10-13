@@ -177,7 +177,10 @@ class FrameNode:
             self.ostream.flush()
 
         nodes = list(sG.nodes())
-        ind_max = max(map(lambda n: int(nl(n)), nodes))
+        try:
+            ind_max = max(map(lambda n: int(nl(n)), nodes))
+        except ValueError:
+            ind_max = len(nodes)
         hydrogen_nodes = [n for n in nodes if nn(n) == "H"]
         oxygen_nodes = [n for n in nodes if nn(n) == "O"]
         metal_nodes = [n for n in nodes if nn(n) == metal]

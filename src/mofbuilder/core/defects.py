@@ -79,7 +79,7 @@ class TerminationDefectGenerator:
         self._debug = False
     
 
-    def remove_items_or_terminate(self, res_idx2rm, cleaved_eG):
+    def remove_items_or_terminate(self, res_idx2rm=[], cleaved_eG=None):
         #cleave
         #xoo
         if not res_idx2rm:
