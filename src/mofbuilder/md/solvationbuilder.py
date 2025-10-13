@@ -31,7 +31,7 @@ def safe_dict_copy(d):
     return new_d
 
 
-class SolventPacker:
+class SolvationBuilder:
 
     def __init__(self, comm=None, ostream=None):
         self.comm = comm or MPI.COMM_WORLD
@@ -42,12 +42,13 @@ class SolventPacker:
 
         self.buffer = 1.8  # Å
         self.box_size = None
-        self.trial_rounds = 10
+        self.trial_rounds = 1
         self.max_fill_rounds = 500  # Maximum number of filling rounds
         #scalar to control the number of candidates generated in each round, 1.0 means generate number of candidates equal to cavity number
         self.scalar = 1.0
         #use solute file
         self.solute_file = None
+        self.solute_data = None  # interface for framework data
 
         #use solvents names
         self.solvents_names = []
@@ -55,7 +56,12 @@ class SolventPacker:
         self.solvents_proportions = []
         self.solvents_quantities = []
 
+        self.best_solvents_dict = None
+
         self.custom_solvent_data = {}
+
+        #write output files to target directory
+        self.target_directory = None
 
         self._debug = False
 
@@ -87,12 +93,14 @@ class SolventPacker:
 
         #use inner box size to avoid placing solvent on the boundary
         if points_template is None:
-            random_points = self._box2randompoints(None, box_size, target_mol_number)
+            random_points = self._box2randompoints(None, box_size,
+                                                   target_mol_number)
         else:
             if points_template.shape[0] < target_mol_number:
                 #add random points to fill the rest
                 n_additional = target_mol_number - points_template.shape[0]
-                random_points = self._box2randompoints(points_template, box_size, n_additional)
+                random_points = self._box2randompoints(points_template,
+                                                       box_size, n_additional)
             else:
                 random_points = points_template
         #shuffle the random points
@@ -123,14 +131,17 @@ class SolventPacker:
         if points_template is None:
             points_template = np.empty((0, 3))
         additional_points = np.random.rand(n_additional, 3)
-        additional_points[:, 0] = additional_points[:, 0] * (box_size[0][1] - box_size[0][0]) + box_size[0][0]
-        additional_points[:, 1] = additional_points[:, 1] * (box_size[1][1] - box_size[1][0]) + box_size[1][0]
-        additional_points[:, 2] = additional_points[:, 2] * (box_size[2][1] - box_size[2][0]) + box_size[2][0]
+        additional_points[:, 0] = additional_points[:, 0] * (
+            box_size[0][1] - box_size[0][0]) + box_size[0][0]
+        additional_points[:, 1] = additional_points[:, 1] * (
+            box_size[1][1] - box_size[1][0]) + box_size[1][0]
+        additional_points[:, 2] = additional_points[:, 2] * (
+            box_size[2][1] - box_size[2][0]) + box_size[2][0]
         random_points = np.vstack((points_template, additional_points))
         return random_points
 
     def remove_overlaps_kdtree(self, existing_coords, candidate_coords,
-                                candidate_residues):
+                               candidate_residues):
         candidate_residues = candidate_residues.reshape(-1)
 
         # === Round 1: overlap with existing atoms ===
@@ -167,7 +178,7 @@ class SolventPacker:
         return keep_mask, drop_mask
 
     def _remove_overlaps_kdtree(self, existing_coords, candidate_coords,
-                               candidate_residues):
+                                candidate_residues):
         candidate_residues = candidate_residues.reshape(-1)
 
         # === Round 1: overlaps with existing atoms ===
@@ -254,7 +265,8 @@ class SolventPacker:
             if points_template.shape[0] < target_number:
                 #add random points to fill the rest
                 n_additional = target_number - points_template.shape[0]
-                points_template = self._box2randompoints(points_template, box_size, n_additional)
+                points_template = self._box2randompoints(
+                    points_template, box_size, n_additional)
             if points_template.shape[0] > target_number:
                 points_template = points_template[:target_number]
         all_res_com_random_points = np.empty((0, 3))
@@ -313,7 +325,7 @@ class SolventPacker:
                 self._add_custom_solvent(f, d, m)
 
     def _get_density_molarmass(self, name):
-        if name == 'water':
+        if name.lower() in ['water','tip3p','tip4p','tip5p','tip4pew','spc','spce']:
             return 1.0, 18.015  # g/cm³, g/mol
         elif name == 'dmso':
             return 1.1, 78.13
@@ -370,11 +382,13 @@ class SolventPacker:
 
         elif quantities:
             total_quant = sum(quantities)
+            if total_quant == 0:
+                return None
             proportion = [q / total_quant for q in quantities]
 
         else:
-            raise ValueError(
-                "Either proportion or quantities must be provided.")
+            self.ostream.print_warning(f"need solvents quantities or proportions")
+            return None
 
         solvents_mols = self._xyzfiles2mols(solvents_files)
         solvents_names = [Path(f).stem
@@ -438,8 +452,16 @@ class SolventPacker:
         max_radii = max(radii)
         return max_radii
 
-    def load_solute_info(self, solute_file):
-        solute_labels, solute_coords = self._read_xyz(solute_file)
+    def load_solute_info(self, solute_file=None, solute_data=None):
+        if solute_file is not None and Path(solute_file).is_file():
+            solute_labels, solute_coords = self._read_xyz(solute_file)
+        elif solute_data is not None:
+            solute_data = np.vstack(solute_data).reshape(-1, 11)
+            solute_labels = solute_data[:, 1]
+            solute_coords = solute_data[:, 5:8].astype(float)
+            #center at origin
+            solute_coords -= np.mean(solute_coords, axis=0)
+
         solute_info = {
             'labels': solute_labels,
             'coords': solute_coords,
@@ -464,15 +486,19 @@ class SolventPacker:
             self.ostream.flush()
         return points_template
 
-    def solvate(self, trial_rounds=1):
+    def solvate(self):
 
         #calculate the proportion of each solvent
         #LOAD solute and solvents
         original_solvents_dict = self._initialize_solvents_dict(
             self.solvents_files, self.solvents_proportions,
             self.solvents_quantities)
-
-        solute_dict = self.load_solute_info(self.solute_file)
+        if original_solvents_dict is None:
+            return
+        if self.solute_data is not None:
+            solute_dict = self.load_solute_info(solute_data=self.solute_data)
+        elif self.solute_file is not None:
+            solute_dict = self.load_solute_info(solute_file=self.solute_file)
 
         self.original_solvents_dict = original_solvents_dict
         self.solute_dict = solute_dict
@@ -484,7 +510,7 @@ class SolventPacker:
         self.ostream.print_info(
             f"Total target solvent mols to add: {total_number}")
         self.ostream.flush()
-        trial_rounds = max(1, trial_rounds)
+        trial_rounds = max(1, self.trial_rounds)
 
         if total_number == 0:
             self.ostream.print_info("No solvents to add.")
@@ -504,9 +530,11 @@ class SolventPacker:
         points_template = self.grid_points_template(original_solvents_dict,
                                                     self.box_size,
                                                     grid_spacing=grid_spacing)
-        self.safe_box = [[grid_spacing, self.box_size[0]-grid_spacing],
-                         [grid_spacing, self.box_size[1]-grid_spacing],
-                         [grid_spacing, self.box_size[2]-grid_spacing]]
+        self.safe_box = [[grid_spacing, self.box_size[0] - grid_spacing],
+                         [grid_spacing, self.box_size[1] - grid_spacing],
+                         [grid_spacing, self.box_size[2] - grid_spacing]]
+        #put solute in the center of the box
+        self.rc_solute_coords = solute_dict['coords'] + np.array(self.box_size) / 2
 
         # --- Trial loop for random seeds ---
         for trial in range(trial_rounds):
@@ -546,7 +574,7 @@ class SolventPacker:
 
             # --- Round 1 overlap removal ---
             keep_mask, drop_mask = self._remove_overlaps_kdtree(
-                solute_dict['coords'], all_candidate_coords,
+                self.rc_solute_coords, all_candidate_coords,
                 all_candidate_residues)
 
             accepted_coords = all_candidate_coords[keep_mask]
@@ -571,7 +599,8 @@ class SolventPacker:
 
             #the scalar is used to control the times of number of candidates generated in each round
             #scalar = 1 if self.scalar is None else self.scalar
-            cavity_number = total_number - len(set(accepted_residues.flatten()))
+            cavity_number = total_number - len(set(
+                accepted_residues.flatten()))
             while round_idx < max_fill_rounds and cavity_number > 0:
                 round_idx += 1
                 if self._debug:
@@ -583,7 +612,8 @@ class SolventPacker:
                 if cavity_number == 0:
                     break
                 #if too many overlap, decrease the number of possible centers
-                new_points_num = cavity_number if cavity_number > 2000 else max(1000, cavity_number)
+                new_points_num = cavity_number if cavity_number > 2000 else max(
+                    1000, cavity_number)
                 round_all_candidates_data, solvents_dict, _, all_res_com_points = self._generate_candidates(
                     solvents_dict,
                     target_number=new_points_num,
@@ -598,7 +628,8 @@ class SolventPacker:
                         f"Round {round_idx}: start kdtree overlap removal...")
                     self.ostream.flush()
                 round_keep_mask, round_drop_mask = self._remove_overlaps_kdtree(
-                    accepted_coords, round_all_candidates_data['coords'],
+                    np.vstack((self.rc_solute_coords, accepted_coords)),
+                    round_all_candidates_data['coords'],
                     round_all_candidates_data['residue_idx'])
                 if self._debug:
                     self.ostream.print_info(
@@ -635,9 +666,11 @@ class SolventPacker:
                     break
 
                 # Update accepted mols
-                accepted_coords = np.vstack((accepted_coords, round_keep_coords))
+                accepted_coords = np.vstack(
+                    (accepted_coords, round_keep_coords))
                 accepted_labels = np.r_[accepted_labels, round_keep_labels]
-                accepted_residues = np.r_[accepted_residues,round_keep_residues]
+                accepted_residues = np.r_[accepted_residues,
+                                          round_keep_residues]
 
             # --- Update best trial ---
 
@@ -646,7 +679,8 @@ class SolventPacker:
                 best_accepted_coords = accepted_coords.copy()
                 best_accepted_labels = accepted_labels.copy()
                 best_accepted_residues = accepted_residues.copy()
-                best_accepted_total_number = len(set(best_accepted_residues.flatten()))
+                best_accepted_total_number = len(
+                    set(best_accepted_residues.flatten()))
                 best_solvents_dict = safe_dict_copy(solvents_dict)
                 best_keep_masks = keep_masks.copy()
                 best_candidates_res_idx = candidates_res_idx.copy()
@@ -654,7 +688,8 @@ class SolventPacker:
         # --- Merge solute and best solvent trial ---
         if best_accepted_coords is not None:
             self.ostream.print_info(
-                f"Best trial added {best_accepted_total_number} mols, atoms: {best_accepted_coords.shape[0]}.")
+                f"Best trial added {best_accepted_total_number} mols, atoms: {best_accepted_coords.shape[0]}."
+            )
             self.ostream.flush()
             #calculate density
             #use best keeps masks to each solvent as extended residue idx to count the number of each solvent
@@ -787,6 +822,83 @@ class SolventPacker:
 
         return best_solvents_dict
 
+    def _update_datalines(self, res_idx_start=1):
+
+        #update solute data lines by translating to the center of the box
+        self.solute_data[:, 5:8] = self.solute_data[:, 5:8].astype(float) - np.mean(
+            self.solute_data[:, 5:8].astype(float), axis=0)+ np.array(self.box_size) / 2
+
+        #generate data lines for each solvent and combine them
+        solvents_datalines = np.empty((0, 11))
+        if self.best_solvents_dict is None:
+            self.solvents_datalines = solvents_datalines
+            return self.solute_data, self.solvents_datalines
+
+        for solvent, data in self.best_solvents_dict.items():
+            labels = np.array(data['accepted_atoms_labels']).reshape(-1, 1)
+            coords = np.array(data['accepted_atoms_coords']).reshape(
+                -1, 3).astype(float)
+            x = coords[:, 0].reshape(-1, 1)
+            y = coords[:, 1].reshape(-1, 1)
+            z = coords[:, 2].reshape(-1, 1)
+            spin = np.zeros(len(labels)).reshape(-1, 1)
+            charge = np.zeros(len(labels)).reshape(-1, 1)
+            note = np.array([''] * len(labels)).reshape(-1, 1)
+            residue_name = np.array([solvent] * len(labels)).reshape(-1, 1)
+            atom_number = np.arange(1, len(labels) + 1).reshape(-1, 1)
+            residue_number = np.repeat(
+                np.arange(res_idx_start,
+                          data['accepted_quantity'] + res_idx_start),
+                data['n_atoms']).reshape(-1, 1)
+            res_idx_start += data['accepted_quantity']
+
+            if len(labels) > 0:
+                arr = np.hstack((labels, labels, atom_number, residue_name,
+                                 residue_number, x, y, z, spin, charge, note)).reshape(-1, 11)
+                self.best_solvents_dict[solvent]['data_lines'] = arr
+                solvents_datalines = np.vstack(
+                    (solvents_datalines, arr))
+            else:
+                self.best_solvents_dict[solvent]['data_lines'] = []
+        self.solvents_datalines = solvents_datalines
+        return self.solute_data, self.solvents_datalines
+
+    def write_output(self, output_file="solvated_structure", format=[]):
+        if self.target_directory is not None:
+            output_file = Path(self.target_directory) / output_file
+        if not format:
+            self.ostream.print_warning(
+                "No output format specified, defaulting to 'xyz'.")
+            format = ['xyz']
+        if isinstance(format, str):
+            format = [format]
+
+        self.system_datalines = np.vstack(
+            (self.solute_data, self.solvents_datalines))
+        header = f"Generated by MofBuilder\n"
+        if 'xyz' in format:
+            from ..io.xyz_writer import XyzWriter
+            xyz_writer = XyzWriter(comm=self.comm,ostream=self.ostream)
+            xyz_file = Path(output_file).with_suffix('.xyz')
+            xyz_writer.write(filepath=xyz_file,header=header, lines=self.system_datalines)
+            self.ostream.print_info(f"Wrote output XYZ file: {xyz_file}")
+            self.ostream.flush()
+        if 'pdb' in format:
+            from ..io.pdb_writer import PdbWriter
+            pdb_writer = PdbWriter(comm=self.comm,ostream=self.ostream)
+            pdb_file = Path(output_file).with_suffix('.pdb')
+            pdb_writer.write(filepath=pdb_file, header=header, lines=self.system_datalines)
+            self.ostream.print_info(f"Wrote output PDB file: {pdb_file}")
+            self.ostream.flush()
+        if 'gro' in format:
+            from ..io.gro_writer import GroWriter
+            gro_file = Path(output_file).with_suffix('.gro')
+            gro_writer = GroWriter(comm=self.comm,ostream=self.ostream)
+            gro_writer.write(filepath=gro_file, header=header, lines=self.system_datalines, box=self.box_size)
+            self.ostream.print_info(f"Wrote output GRO file: {gro_file}")
+            self.ostream.flush()
+
+
     def _density2number(self, density, molar_mass, box_size, proportion=1.0):
         """
         Calculate the number of mols that can fit in the box given the density and molar mass.
@@ -822,7 +934,7 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     import time
-    packer = SolventPacker()
+    packer = SolvationBuilder()
     packer.box_size = np.array([100, 100, 100])  # Å
     packer.buffer = 1.8  # Å
     packer.max_fill_rounds = 400
@@ -832,8 +944,7 @@ if __name__ == "__main__":
         solute_file="water.xyz",
         solvents_files=["water.xyz", "dmso.xyz"],
         target_solvents_numbers=[33000, 0000],
-        output_file="solvated_structure.xyz",
-        trial_rounds=1)
+        box_buffer = 2)
     print("Total time (s):", time.time() - start_time)
 
     import veloxchem as vlx
