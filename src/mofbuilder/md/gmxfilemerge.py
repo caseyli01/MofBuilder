@@ -30,9 +30,9 @@ class GromacsForcefieldMerger():
 
         #self.solvate = False #later
         #
-        self.solvent_name = None
+        self.solvents_name = None
         #self.neutral_system = False #later
-        self.counter_ion_names = None #later
+        #self.counter_ion_names = None #later
 
         self._debug = False
 
@@ -40,7 +40,7 @@ class GromacsForcefieldMerger():
     def _copy_file(self, old_path, new_path):
         src = Path(old_path)
         dest = Path(new_path)
-        if (not dest.is_file()) or (not src.samefile(dest)):
+        if (not dest.is_file()):
             if not dest.parent.is_dir():
                 dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(src.read_text())
@@ -104,19 +104,10 @@ class GromacsForcefieldMerger():
                 self.ostream.flush()
 
         # copy solvent, ions, gas itps
-        sol_list = []
-        if self.solvent_name is not None:
-            sol_list.append(self.solvent_name)
-        if self.counter_ion_names is not None:
-            if isinstance(self.counter_ion_names,str):
-                sol_list.append(self.counter_ion_names)
-            if isinstance(self.counter_ion_names,list):
-                sol_list.extend(self.counter_ion_names)
-
-        for sol in sol_list:
-            src_p= Path(data_path, 'solvent_database', f'{sol}.itp')
+        for sol in self.solvents_name:
+            src_p= Path(data_path, 'solvents_database', f'{sol}.itp')
             dest_p = target_itp_path / f'{sol}.itp'
-            self.copy_file(src_p,dest_p)
+            self._copy_file(src_p,dest_p)
 
         # Print target_itp_path files
         final_itp_files = [str(i) for i in Path(target_itp_path).rglob("*.itp")]
@@ -233,6 +224,8 @@ class GromacsForcefieldMerger():
         top_res_lines = []
         for resname in list(res_info):
             if resname[0]==';':
+                continue
+            if res_info[resname] <= 0:
                 continue
             line = "%-5s%16d" % (resname[:3], res_info[resname])
             top_res_lines.append(line)
