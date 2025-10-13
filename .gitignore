@@ -211,9 +211,7 @@ mofbuilder_output.gro
 *.pdb
 *.gro
 *.cif
-*.itp
 .DS_Store
-*.mdp
 *.h5
 *.edr
 *.tpr
