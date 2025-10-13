@@ -212,7 +212,6 @@ mofbuilder_output.gro
 *.gro
 *.cif
 *.itp
-*.top
 .DS_Store
 *.mdp
 *.h5
