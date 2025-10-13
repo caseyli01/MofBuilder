@@ -1,0 +1,10 @@
+COMPND    mnm\(2)
+COMPND   1Created by VESTA
+HETATM    1 N1                   2.481   7.700   3.811  1.00  0.00           N
+HETATM    2 N2                   5.427   5.999   4.667  1.00  0.00           N
+HETATM    3 N3                   5.427   8.457   0.985  1.00  0.00           N
+HETATM    4 N4                   2.481   6.757   1.841  1.00  0.00           N
+HETATM    5 Mn1                  5.316   7.228   2.826  1.00  0.00          Mn
+HETATM    6 Cl1                  5.292   9.166   4.239  1.00  0.00          Cl
+HETATM    7 Cl2                  5.292   5.290   1.413  1.00  0.00          Cl
+HETATM    8 X5                   3.231   7.228   2.826  1.00  0.00           N
