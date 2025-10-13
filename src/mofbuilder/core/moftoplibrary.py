@@ -78,6 +78,8 @@ class MofTopLibrary:
 
     def list_mof_family(self):
         # print mof_top_dict keys fit to screen
+        if self.mof_top_dict is None:
+            self._read_mof_top_dict(self.data_path)
         self.ostream.print_info("Available MOF Family:")
         self.ostream.print_info(" ".join(self.mof_top_dict.keys()))
         self.ostream.flush()
