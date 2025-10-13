@@ -18,10 +18,12 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .linkerforcefield import LinkerForceFieldGenerator,ForceFieldMapper
+from .linkerforcefield import LinkerForceFieldGenerator, ForceFieldMapper
 from .gmxfilemerge import GromacsForcefieldMerger
-from .solvationbuilder import SolventPacker
-#from .merge_gmxff import GromacsForcefieldMerger
-#from .setup import MDSetup
+from .solvationbuilder import SolvationBuilder
+from .setup import OpenmmSetup
 
-__all__ = ["SolventPacker", "LinkerForceFieldGenerator", "GromacsForcefieldMerger","ForceFieldMapper"]
+__all__ = [
+    "OpenmmSetup", "SolvationBuilder", "LinkerForceFieldGenerator",
+    "GromacsForcefieldMerger", "ForceFieldMapper"
+]
