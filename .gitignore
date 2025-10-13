@@ -225,3 +225,4 @@ Makefile
 test.ipynb
 tests/database/.DS_Store
 tests/database/.DS_Store
+*.cache

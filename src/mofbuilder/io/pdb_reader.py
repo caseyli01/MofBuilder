@@ -50,25 +50,40 @@ class PdbReader:
             lines = fp.readlines()
 
         data = []
-        count=1
+        #count=1
         for line in lines:
             line = line.strip()
             if len(line) > 0:  # skip blank line
-                if line[0:4] == "ATOM" or line[0:6] == "HETATM":
-                    atom_type = line[12:16].strip()  # atom_label X1
-                    value_x = float(line[30:38])  # x
-                    value_y = float(line[38:46])  # y
-                    value_z = float(line[46:54])  # z
-                    atom_label = nn(line[67:80].strip())  # atom_note
-                    atom_number = count  # atom_number
-                    residue_name = line[17:20].strip()  # residue_name
-                    residue_number = int(line[22:26]) if line[22:26].strip() != "" else 1 # residue_number
-                    charge = float(line[54:60]) if line[54:60].strip() != "" else 0.0  # charge
-                    spin = float(line[60:66]) if line[60:66].strip() != "" else 0  # spin
-                    note = nn(atom_type)  # note
-                    count+=1
-                    data.append(
-                        [atom_type, atom_label, atom_number, residue_name, residue_number, value_x, value_y, value_z, spin, charge, note])
+                if line.startswith("ATOM") or line.startswith("HETATM"):
+                    atom_number    = int(line[6:11]) if line[6:11].strip() else 1  # atom serial
+                    atom_type      = line[12:16].strip()  # atom name (e.g. "X1")
+                    residue_name   = line[17:20].strip()  # residue name
+                    chain_id       = line[21].strip() if line[21].strip() else "A"  # chain
+                    residue_number = int(line[22:26]) if line[22:26].strip() else 1  # residue number
+                    value_x        = float(line[30:38])
+                    value_y        = float(line[38:46])
+                    value_z        = float(line[46:54])
+                    occupancy      = float(line[54:60]) if line[54:60].strip() else 0.0
+                    b_factor       = float(line[60:66]) if line[60:66].strip() else 0.0
+                    atom_label     = line[76:78].strip()  # element symbol (e.g. "C")
+                    charge         = line[78:80].strip()  # formal charge (string like "2+")
+
+                    # custom mapping
+                    note = nn(atom_type)
+
+                    data.append([
+                        atom_type,       # assigned atom name, e.g. "CA"
+                        atom_label,      # element symbol, e.g. "C"
+                        atom_number,     # serial number
+                        residue_name,    # residue name
+                        residue_number,  # residue index
+                        value_x, value_y, value_z,
+                        occupancy,       # occupancy
+                        b_factor,       # B-factor
+                        note             # custom mapping
+                    ])
+        
+        
         self.data = np.vstack(data)
         #should set type of array elements
         def type_data(arr):
