@@ -10,6 +10,7 @@ from veloxchem.molecularbasis import MolecularBasis
 from veloxchem.scfrestdriver import ScfRestrictedDriver
 from veloxchem.scfunrestdriver import ScfUnrestrictedDriver
 from ..io.basic import nn
+from ..core.other import safe_dict_copy
 from veloxchem.outputstream import OutputStream
 from veloxchem.veloxchemlib import mpi_master, hartree_in_kcalpermol, hartree_in_kjpermol
 from veloxchem.errorhandler import assert_msg_critical
@@ -17,18 +18,6 @@ import mpi4py.MPI as MPI
 import sys
 
 
-def safe_dict_copy(d):
-    new_d = {}
-    for k, v in d.items():
-        if isinstance(v, dict):
-            new_d[k] = safe_dict_copy(v)
-        elif isinstance(v, np.ndarray):
-            new_d[k] = v.copy()
-        elif isinstance(v, list):
-            new_d[k] = list(v)
-        else:
-            new_d[k] = v
-    return new_d
 
 
 class SolvationBuilder:

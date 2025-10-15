@@ -18,7 +18,7 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 """
 
-from .builder import Builder
+from .builder import MetalOrganicFrameworkBuilder
 from .defects import TerminationDefectGenerator
 from .framework import Framework
 from .net import FrameNet
@@ -31,8 +31,8 @@ from .supercell import SupercellBuilder, EdgeGraphBuilder
 from .write import MofWriter
 
 __all__ = [
-    "Builder", "TerminationDefectGenerator", "OptimizationDriver", "Framework",
-    "FrameNet", "FrameNode", "FrameLinker", "FrameTermination",
+     "TerminationDefectGenerator", "OptimizationDriver", "Framework",
+    "MetalOrganicFrameworkBuilder", "FrameNet", "FrameNode", "FrameLinker", "FrameTermination",
     "MofTopLibrary", "NetOptimizer", "SupercellBuilder", "EdgeGraphBuilder",
     "MofWriter"
 ]

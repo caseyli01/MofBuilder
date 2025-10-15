@@ -25,5 +25,6 @@ __license__ = "LGPL-3.0-or-later"
 
 # Import main modules for convenient access
 from . import analysis, core, io, utils, visualization,md
+from .core.builder import MetalOrganicFrameworkBuilder 
 
-__all__ = ["core", "io", "utils", "analysis", "visualization", "md", "__version__"]
+__all__ = ["MetalOrganicFrameworkBuilder", "core", "io", "utils", "analysis", "visualization", "md", "__version__"]

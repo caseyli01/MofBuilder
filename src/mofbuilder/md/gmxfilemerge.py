@@ -107,6 +107,7 @@ class GromacsForcefieldMerger():
         for sol in self.solvents_name:
             src_p= Path(data_path, 'solvents_database', f'{sol}.itp')
             dest_p = target_itp_path / f'{sol}.itp'
+            print(f"copying solvent itp file {src_p} to {dest_p}")
             self._copy_file(src_p,dest_p)
 
         # Print target_itp_path files

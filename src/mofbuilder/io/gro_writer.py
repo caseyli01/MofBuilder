@@ -62,6 +62,7 @@ class GroWriter:
         x_min, y_min, z_min = np.min(coords, axis=0)
         x_max, y_max, z_max = np.max(coords, axis=0)
         box_size = np.array([x_max - x_min, y_max - y_min, z_max - z_min])
+        translation = box_size / 2 - center[:3]
         #if original box size is big enough, use it
         if box is not None:
             if (box[0] >= box_size[0]) and (box[1] >= box_size[1]) and (box[2] >= box_size[2]):
@@ -81,9 +82,9 @@ class GroWriter:
                 atom_number = i + 1
                 residue_name = values[3].split('_')[0][:3]
                 residue_number = residue_count
-                x = (float(values[5])-center[0])/10  # convert to nm
-                y = (float(values[6])-center[1])/10
-                z = (float(values[7])-center[2])/10
+                x = (float(values[5])+translation[0])/10  # convert to nm
+                y = (float(values[6])+translation[1])/10
+                z = (float(values[7])+translation[2])/10
                 spin = values[8]
                 charge = values[9]
                 note = values[10]

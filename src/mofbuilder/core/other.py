@@ -36,3 +36,26 @@ def order_edge_array(row_ind, col_ind, edges_array):
     new_order = sorted(old_order, key=lambda x: x[0])
     ordered_arr = np.vstack([new_order[j][2] for j in range(len(new_order))])
     return ordered_arr
+
+def safe_dict_copy(d):
+    new_d = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            new_d[k] = safe_dict_copy(v)
+        elif isinstance(v, np.ndarray):
+            new_d[k] = v.copy()
+        elif isinstance(v, list):
+            new_d[k] = list(v)
+        else:
+            new_d[k] = v
+    return new_d
+
+def safe_copy(value):
+    if isinstance(value, dict):
+        return safe_dict_copy(value)
+    elif isinstance(value, np.ndarray):
+        return value.copy()
+    elif isinstance(value, list):
+        return list(value)
+    else:
+        return value
