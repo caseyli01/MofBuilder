@@ -334,6 +334,8 @@ class SolvationBuilder:
             return 0.866, 92.14
         elif name == 'benzene':
             return 0.876, 78.11
+        elif name == "CO2":
+            return 1.842, 44.01  # supercritical CO2 at 40C and 200 bar
         else:
             self.ostream.print_info(
                 f"Unknown solvent {name}, should provide density and molar mass."
