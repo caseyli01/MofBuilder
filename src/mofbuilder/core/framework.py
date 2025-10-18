@@ -248,13 +248,13 @@ class Framework:
         #        f.write(' '.join(map(str, line)) + '\n')
 
 
-    def solvate(self, solvents_files=[], solvents_proportions=[], solvents_quantities=[], box_buffer=10):
+    def solvate(self, solvents_files=[], solvents_proportions=[], solvents_quantities=[], padding_angstrom=10):
         self.solvationbuilder.solvents_files = solvents_files if solvents_files else self.solvents 
         self.solvationbuilder.solute_data = self.framework_data
         self.solvationbuilder.solvents_proportions = solvents_proportions if solvents_proportions else self.solvents_proportions
         self.solvationbuilder.solvents_quantities = solvents_quantities if solvents_quantities else self.solvents_quantities
         self.solvationbuilder.target_directory = self.target_directory
-        self.solvationbuilder.box_size = self.supercell_info[0:3] + np.array([box_buffer, box_buffer, box_buffer])
+        self.solvationbuilder.box_size = self.supercell_info[0:3] + np.array([padding_angstrom, padding_angstrom, padding_angstrom])
         self.solvents_dict = self.solvationbuilder.solvate()
         self.framework_data, self.solvents_data = self.solvationbuilder._update_datalines()
         #update residue info 
