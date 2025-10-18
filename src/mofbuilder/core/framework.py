@@ -87,11 +87,10 @@ class Framework:
         self.sc_unit_cell = None
         self.sc_unit_cell_inv = None
 
-        self.clean_unsaturated_linkers = None
-        self.update_node_termination = None
-        self.unsaturated_linkers = None
-        self.unsaturated_nodes = None
-        self.saved_unsaturated_linker = None
+        self.clean_unsaturated_linkers = False
+        self.update_node_termination = True
+        self.unsaturated_linkers = []
+        self.unsaturated_nodes = []
         self.matched_vnode_xind = None
         self.xoo_dict = None
 
@@ -184,13 +183,13 @@ class Framework:
         self.defectgenerator.eG_index_name_dict = self.graph_index_name_dict
         self.defectgenerator.sc_unit_cell = self.sc_unit_cell
         self.defectgenerator.sc_unit_cell_inv = self.sc_unit_cell_inv
-        self.defectgenerator.clean_unsaturated_linkers = self.clean_unsaturated_linkers
-        self.defectgenerator.update_node_termination = self.update_node_termination
-        self.defectgenerator.matched_vnode_xind = safe_copy(self.matched_vnode_xind)
-        self.defectgenerator.xoo_dict = safe_copy(self.xoo_dict)
+        self.defectgenerator.clean_unsaturated_linkers = self.clean_unsaturated_linkers #boolean
+        self.defectgenerator.update_node_termination = self.update_node_termination #boolean
+        self.defectgenerator.matched_vnode_xind = self.matched_vnode_xind
+        self.defectgenerator.xoo_dict = self.xoo_dict
         self.defectgenerator.use_termination = self.termination
-        self.defectgenerator.unsaturated_linkers = safe_copy(self.unsaturated_linkers)
-        self.defectgenerator.unsaturated_nodes = safe_copy(self.unsaturated_nodes)
+        self.defectgenerator.unsaturated_linkers = self.unsaturated_linkers
+        self.defectgenerator.unsaturated_nodes = self.unsaturated_nodes
 
 
         #remove
@@ -202,9 +201,10 @@ class Framework:
             if attr not in ['graph','defectgenerator','framework_data']:
                 setattr(new_framework, attr, safe_copy(value))
         new_framework.graph = rmG.copy()
-        new_framework.matched_vnode_xind = safe_copy(self.defectgenerator.updated_matched_vnode_xind if self.update_node_termination else self.defectgenerator.matched_vnode_xind)
+        new_framework.matched_vnode_xind = safe_copy(self.defectgenerator.updated_matched_vnode_xind)
         new_framework.unsaturated_linkers = safe_copy(self.defectgenerator.unsaturated_linkers)
-        new_framework.unsaturated_nodes = safe_copy(self.defectgenerator.unsaturated_nodes)
+        new_framework.unsaturated_nodes = safe_copy(self.defectgenerator.updated_unsaturated_nodes)
+        new_framework.clean_unsaturated_linkers = self.clean_unsaturated_linkers
         new_framework.get_merged_data()
         return new_framework
 

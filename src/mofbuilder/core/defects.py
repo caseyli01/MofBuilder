@@ -48,10 +48,12 @@ class TerminationDefectGenerator:
         self.sc_unit_cell_inv = None
         #for remove
         self.res_idx2rm = []
+        self.xoo_dict = None  
+
         self.matched_vnode_xind = None
         self.updated_matched_vnode_xind = None  #will be set after remove
-        self.xoo_dict = None
         self.unsaturated_nodes = []  # list of unsaturated node name
+        self.updated_unsaturated_nodes = []  #will be set after remove
         self.unsaturated_linkers = []  # list of unsaturated linker name
         self.termination_data = []  # list of termination XOO vectors
         self.termination_X_data = []  # list of termination X atoms
@@ -83,14 +85,37 @@ class TerminationDefectGenerator:
     def remove_items_or_terminate(self, res_idx2rm=[], cleaved_eG=None):
         #cleave
         #xoo
+
+        #just terminate nodes
         if not res_idx2rm:
             defectG = cleaved_eG.copy()
-            if not self.use_termination:
+            new_unsaturated_linkers = self._find_unsaturated_linkers(defectG, self.linker_connectivity)
+            if (not self.use_termination) and (not self.clean_unsaturated_linkers):
+                self.unsaturated_linkers = new_unsaturated_linkers
                 return defectG
-            else:
+            elif (not self.use_termination) and (self.clean_unsaturated_linkers):
+                for linker_name in new_unsaturated_linkers:
+                    if linker_name in defectG.nodes():
+                        defectG.remove_node(linker_name)
+                        self.ostream.print_info(f"unsaturated linker {linker_name} removed")
+                self.updated_unsaturated_nodes = self.unsaturated_nodes
+                self.updated_matched_vnode_xind = self.matched_vnode_xind
+                return defectG
+            elif (self.use_termination) and (not self.clean_unsaturated_linkers):
                 new_unsaturated_nodes = self._find_unsaturated_nodes(defectG, self.node_connectivity)
-                termG, unsaturated_vnode_xoo_dict = self._add_terminations_to_unsaturated_nodes(defectG,new_unsaturated_nodes)
+                termG, _ = self._add_terminations_to_unsaturated_nodes(defectG,new_unsaturated_nodes,self.matched_vnode_xind)
+                self.updated_unsaturated_nodes = new_unsaturated_nodes
+                self.updated_matched_vnode_xind = self.matched_vnode_xind
+                self.unsaturated_linkers = new_unsaturated_linkers
                 return termG
+            else: #self.use_termination and self.clean_unsaturated_linkers
+                res_idx2rm = []
+                for k,v in self.eG_index_name_dict.items():
+                    if v in new_unsaturated_linkers:
+                        res_idx2rm.append(k)
+                    
+
+
 
             
         self.ostream.print_info(f"trying removing items: {res_idx2rm}")
@@ -101,22 +126,21 @@ class TerminationDefectGenerator:
         defectG = cleaved_eG.copy()
 
         new_unsaturated_nodes = self._find_unsaturated_nodes(defectG, self.node_connectivity)
-        new_unsaturated_linkers = self._find_unsaturated_linkers(defectG, self.linker_connectivity)
-        
-        # clean all unsaturated linkers
-        #add all unsaturated linkers to the to_remove_edges_name
-        if self.clean_unsaturated_linkers:
-            nodes_names2rm.append(new_unsaturated_linkers) if new_unsaturated_linkers else None
-            self.ostream.print_info(
-                f"clean unsaturated linkers: {new_unsaturated_linkers}"
-            )
-            self.ostream.flush()
-
         for node_name in nodes_names2rm:
             if node_name in defectG.nodes():
                 defectG.remove_node(node_name)
                 self.ostream.print_info(f"node {node_name} removed")
                 self.ostream.flush()
+
+        #remove all unsaturated linkers
+        if self.clean_unsaturated_linkers:
+            new_unsaturated_linkers = self._find_unsaturated_linkers(defectG, self.linker_connectivity)
+            for linker_name in new_unsaturated_linkers:
+                if linker_name in defectG.nodes():
+                    defectG.remove_node(linker_name)
+                    self.ostream.print_info(f"unsaturated linker {linker_name} removed")
+                    self.ostream.flush()
+            self.unsaturated_linkers = new_unsaturated_linkers
 
         if self._debug:
             self.ostream.print_info(f"new unsaturated nodes: {new_unsaturated_nodes}")
@@ -136,21 +160,21 @@ class TerminationDefectGenerator:
             #update unsaturated nodes
             self.ostream.print_info("update unsaturated nodes")
             self.ostream.flush()
-            matched_vnode_xind = self.matched_vnode_xind if self.matched_vnode_xind is not None else []
-            self.unsaturated_nodes = new_unsaturated_nodes
-            #
-            self.updated_matched_vnode_xind = self._update_matched_nodes_xind(nodes_names2rm, matched_vnode_xind)
 
-            self.ostream.flush()
+            updated_matched_vnode_xind = self._update_matched_nodes_xind(nodes_names2rm, self.matched_vnode_xind)
             #self.saved_eG_matched_vnode_xind = self.matched_vnode_xind
             #add termination to the new unsaturated node
-            termG, unsaturated_vnode_xoo_dict = self._add_terminations_to_unsaturated_nodes(defectG, new_unsaturated_nodes)
+            termG, _ = self._add_terminations_to_unsaturated_nodes(defectG, new_unsaturated_nodes,updated_matched_vnode_xind)
+            self.updated_unsaturated_nodes = new_unsaturated_nodes
+            self.updated_matched_vnode_xind = updated_matched_vnode_xind
             return termG
 
         else:
             #self.matched_vnode_xind = self.saved_eG_matched_vnode_xind
             #add termination to the old unsaturated node
-            termG, unsaturated_vnode_xoo_dict = self._add_terminations_to_unsaturated_nodes(defectG,self.unsaturated_nodes)
+            termG, _ = self._add_terminations_to_unsaturated_nodes(defectG,self.unsaturated_nodes,self.matched_vnode_xind)
+            self.updated_unsaturated_nodes = self.unsaturated_nodes
+            self.updated_matched_vnode_xind = self.matched_vnode_xind
             return termG
 
 
@@ -231,7 +255,7 @@ class TerminationDefectGenerator:
 
         return update_matched_vnode_xind
 
-    def _add_terminations_to_unsaturated_nodes(self, eG, original_unsaturated_nodes=[]):
+    def _add_terminations_to_unsaturated_nodes(self, eG, unsaturated_nodes=[], matched_vnode_xind=[]):
         """
         use the node terminations to add terminations to the unsaturated nodes
         """
@@ -241,20 +265,19 @@ class TerminationDefectGenerator:
         term_atoms = self.termination_data[:,0:2]
 
         termG = eG.copy()
-        unsaturated_nodes = [
-            n for n in original_unsaturated_nodes if n in termG.nodes()
-        ]
+        unsaturated_nodes = [n for n in unsaturated_nodes if n in termG.nodes()]
 
         if not unsaturated_nodes:
             self.ostream.print_warning(
                 "no unsaturated nodes found in the graph, skip adding terminations"
             )
+            return termG, {}
 
-        matched_vnode_xind = self.updated_matched_vnode_xind if self.update_node_termination is not None else self.matched_vnode_xind
+
         (
-            self.unsaturated_vnode_xind_dict,
+            unsaturated_vnode_xind_dict,
             unsaturated_vnode_xoo_dict,  #will be updated after adding terminations
-            self.matched_vnode_xind_dict,
+            matched_vnode_xind_dict,
         ) = self._make_unsaturated_vnode_xoo_dict(unsaturated_nodes,
                                                   self.xoo_dict,
                                                   matched_vnode_xind,
@@ -270,15 +293,13 @@ class TerminationDefectGenerator:
                 "x_cpoints"]
             exvnode_oo_ccoords = unsaturated_vnode_xoo_dict[exvnode_xind_key][
                 "oo_cpoints"]
-            node_xoo_ccoords = np.vstack(
-                [exvnode_x_ccoords, exvnode_oo_ccoords])
+            node_xoo_ccoords = np.vstack([exvnode_x_ccoords, exvnode_oo_ccoords])
 
             # make the beginning point of the termination to the center of the oo atoms
             node_oo_center_cvec = np.mean(exvnode_oo_ccoords[:, 2:5].astype(float), axis=0)
             node_xoo_cvecs = (node_xoo_ccoords[:, 2:5].astype(float) - node_oo_center_cvec)
             node_xoo_cvecs = node_xoo_cvecs.astype("float")
             # use record to record the rotation matrix for get rid of the repeat calculation
-
             indices = [
                 index for index, value in enumerate(node_oovecs_record)
                 if is_list_A_in_B(node_xoo_cvecs, value[0])
@@ -363,7 +384,7 @@ class TerminationDefectGenerator:
                 continue
 
             try:
-                fpoints_len = len(fpoints)
+                fpoints_len = len(fpoints) 
             except Exception:
                 fpoints_len = 0
 

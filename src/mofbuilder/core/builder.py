@@ -480,7 +480,6 @@ class MetalOrganicFrameworkBuilder:
             self.defectgenerator.cleaved_eG = self.cleaved_eG.copy()
             self.defectgenerator.linker_connectivity = self.linker_connectivity
             self.defectgenerator.node_connectivity = self.node_connectivity + self.vir_edge_max_neighbor if self.add_virtual_edge else self.node_connectivity
-            self.defectgenerator._debug = self._debug
             self.defectgenerator.eG_index_name_dict = self.edgegraphbuilder.eG_index_name_dict
             self.defectgenerator.eG_matched_vnode_xind = self.edgegraphbuilder.matched_vnode_xind
             self.defectgenerator.sc_unit_cell = self.net_optimizer.sc_unit_cell
@@ -494,15 +493,13 @@ class MetalOrganicFrameworkBuilder:
             self.defectgenerator.unsaturated_linkers = self.edgegraphbuilder.unsaturated_linkers
             self.defectgenerator.unsaturated_nodes = self.edgegraphbuilder.unsaturated_nodes
             #remove
-            rmG = self.defectgenerator.remove_items_or_terminate(
-                cleaved_eG=self.cleaved_eG.copy())
+            terminated_G = self.defectgenerator.remove_items_or_terminate(res_idx2rm=[], cleaved_eG=self.cleaved_eG.copy())
             #update the framework
-            self.framework.graph = rmG.copy()
-            self.framework.saved_unsaturated_linker = self.defectgenerator.saved_unsaturated_linker
-            self.framework.matched_vnode_xind = self.defectgenerator.matched_vnode_xind
+            self.framework.graph = terminated_G.copy()
+            self.framework.matched_vnode_xind = self.defectgenerator.updated_matched_vnode_xind
             self.framework.unsaturated_linkers = self.defectgenerator.unsaturated_linkers
-            self.framework.unsaturated_nodes = self.defectgenerator.unsaturated_nodes   
-
+            self.framework.unsaturated_nodes = self.defectgenerator.updated_unsaturated_nodes  
+        
             #pass 
         self.framework.get_merged_data()
         return self.framework
