@@ -114,14 +114,14 @@ class LinkerForceFieldGenerator:
         elif (self.linker_optimization and self.optimize_drv == "qm"):
             opt_linker_mol, scf_result = self._dft_optimize(
                 molecule, self.reconnected_constraints)
+            opt_linker_mol.set_charge(self.linker_charge)
+            opt_linker_mol.set_multiplicity(self.linker_multiplicity)
             ff_gen = self.mmforcefield_generator
             basis = MolecularBasis.read(molecule, "def2-svp")
             self.linker_itp_path = Path(
                 self.target_directory, self.linker_ff_name).with_suffix('.itp')
             ffname = str(self.linker_itp_path).removesuffix('.itp')
-            ff_gen.create_topology(opt_linker_mol,
-                                   basis,
-                                   scf_results=scf_result)
+            ff_gen.create_topology(opt_linker_mol, resp=True)
             ff_gen.write_gromacs_files(filename=ffname,
                                        mol_name=self.linker_residue_name)
         elif (self.linker_optimization and self.optimize_drv == "xtb"):
@@ -215,10 +215,10 @@ class LinkerForceFieldGenerator:
         else:
             mol_scf_drv = ScfUnrestrictedDriver()
         basis = MolecularBasis.read(molecule, "def2-svp")
-        mol_scf_drv.conv_thresh = 1e-3
+        mol_scf_drv.conv_thresh = 1e-4
         mol_scf_drv.xcfun = "blyp"
         mol_scf_drv.ri_coulomb = True
-        mol_scf_drv.grid_level = 2
+        mol_scf_drv.grid_level = 4
         mol_scf_results = mol_scf_drv.compute(molecule, basis)
         mol_opt_drv = OptimizationDriver(mol_scf_drv)
         mol_opt_drv.conv_energy = 1e-04
