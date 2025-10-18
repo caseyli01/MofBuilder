@@ -308,7 +308,7 @@ class Framework:
         self.ostream.flush()
         if self.mofwriter.edges_data:
             self.linker_ff_gen.generate_reconnected_molecule_forcefield(self.mofwriter.edges_data[0])
-
+        self.reconnected_linker_molecule = self.linker_ff_gen.dest_linker_molecule
     def md_prepare(self):
         #write gro file for the framework
         self.generate_linker_forcefield()
