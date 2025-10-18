@@ -166,6 +166,14 @@ class MetalOrganicFrameworkBuilder:
         self.superG = None  #supercell of sG
         self.eG = None  #edge graph with only edge and V node, and XOO atoms linked to the edge
         self.cleaved_eG = None  #edge graph after cleaving the extra edges
+    
+    def list_available_mof_family(self):
+        if self.data_path is None:
+            self.data_path = get_data_path()
+        self.mof_top_library._debug = self._debug
+        self.mof_top_library.data_path = self.data_path
+        self.mof_top_library.list_mof_family()
+    
 
     def _read_net(self):
         if self.data_path is None:
@@ -332,8 +340,8 @@ class MetalOrganicFrameworkBuilder:
     def optimize_framework(self):
         self.net_optimizer._debug = self._debug
         self.net_optimizer.skip_rotation_optimization = self.skip_rotation_optimization
-        self.net_optimizer.rotation_filename = self.rotation_filename
-        self.net_optimizer.load_optimized_rotations = self.load_optimized_rotations
+        self.net_optimizer.rotation_filename = self.rotation_filename #file to save the optimized rotations
+        self.net_optimizer.load_optimized_rotations = self.load_optimized_rotations #h5 file with optimized rotations to load 
         self.net_optimizer.G = self.G.copy()
         self.net_optimizer.cell_info = self.net_cell_info
         self.net_optimizer.V_data = self.frame_nodes.node_data

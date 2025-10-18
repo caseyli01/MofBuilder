@@ -94,6 +94,9 @@ class Framework:
         self.matched_vnode_xind = None
         self.xoo_dict = None
 
+        self.residues_info = None  #dictionary of residue name and quantity
+        self.solvents_dict = None  #dictionary of solvents info after solvation
+
 
 
     def exchange(self, exchange_indices=[],exchange_node_pdbfile=None, exchange_linker_pdbfile=None, exchange_linker_molecule=None):
@@ -311,6 +314,7 @@ class Framework:
         self.generate_linker_forcefield()
         self.gmx_ff = GromacsForcefieldMerger()
         self.gmx_ff._debug = self._debug
+        self.gmx_ff.solvents_dict = self.solvents_dict
         self.gmx_ff.database_dir = self.data_path if self.data_path is not None else get_data_path()
         self.gmx_ff.target_dir = self.target_directory if self.target_directory is not None else Path.cwd()
         self.gmx_ff.node_metal_type = self.node_metal

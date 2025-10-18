@@ -78,7 +78,6 @@ class NetOptimizer:
         #other parameters
         self._debug = False
         self.opt_drv._debug = self._debug
-        self.rotation_filename = None
 
         self.optimized_cell_info = None
         """

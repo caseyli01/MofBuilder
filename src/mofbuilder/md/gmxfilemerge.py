@@ -1,7 +1,13 @@
+from operator import index
 import re
 import sys
 from pathlib import Path
 from veloxchem.outputstream import OutputStream
+from veloxchem.molecule import Molecule
+from veloxchem.scfrestdriver import ScfRestrictedDriver
+from veloxchem.molecularbasis import MolecularBasis
+from veloxchem.optimizationdriver import OptimizationDriver
+from veloxchem.mmforcefieldgenerator import MMForceFieldGenerator
 from veloxchem.veloxchemlib import mpi_master,hartree_in_kcalpermol, hartree_in_kjpermol
 from veloxchem.errorhandler import assert_msg_critical
 import mpi4py.MPI as MPI
@@ -31,6 +37,7 @@ class GromacsForcefieldMerger():
         #self.solvate = False #later
         #
         self.solvents_name = None
+        self.solvents_dict = None 
         #self.neutral_system = False #later
         #self.counter_ion_names = None #later
 
@@ -105,10 +112,21 @@ class GromacsForcefieldMerger():
 
         # copy solvent, ions, gas itps
         for sol in self.solvents_name:
+            #check if solvent itp file exist in database
             src_p= Path(data_path, 'solvents_database', f'{sol}.itp')
+            if not src_p.is_file():
+                #generate solvent itp file if not found in database
+                self.ostream.print_info(f"solvent itp file {src_p} not found in database... will generate {sol} forcefield and add it to database!")
+                self.ostream.flush()
+                sol_molecule = self.solvents_dict[sol]['molecule']
+                #optimize and generate itp file
+                src_p = self._generate_solvent_itp(sol,sol_molecule,str(Path(data_path, 'solvents_database')))
+            
             dest_p = target_itp_path / f'{sol}.itp'
-            print(f"copying solvent itp file {src_p} to {dest_p}")
+            self.ostream.print_info(f"copying solvent itp file {src_p} to {dest_p}")
+            self.ostream.flush()
             self._copy_file(src_p,dest_p)
+
 
         # Print target_itp_path files
         final_itp_files = [str(i) for i in Path(target_itp_path).rglob("*.itp")]
@@ -118,6 +136,36 @@ class GromacsForcefieldMerger():
             self.ostream.print_info(f"include {str_itps}")
             self.ostream.flush()
 
+    def _generate_solvent_itp(self, solvent_name, molecule,target_path):
+        mol_scf_drv = ScfRestrictedDriver()
+        mol_basis = MolecularBasis.read(molecule,"def2-svp")
+        mol_scf_drv.conv_thresh = 1e-3
+        mol_scf_drv.file_name=f"{solvent_name}_opt_scf"
+        mol_scf_drv.xcfun = "b3lyp"
+        mol_scf_drv.ostream.mute()
+        mol_scf_results = mol_scf_drv.compute(molecule,mol_basis)
+        mol_opt_drv = OptimizationDriver(mol_scf_drv)
+        mol_opt_drv.conv_energy = 1e-04
+        mol_opt_drv.conv_drms = 1e-02
+        mol_opt_drv.conv_dmax = 2e-02
+        mol_opt_drv.conv_grms = 4e-03
+        mol_opt_drv.conv_gmax = 8e-03
+    #mol_opt_drv.constraints=["freeze xyz 1,2,3,4,5,6,16,17,18,19,20,21,22,23,24,33,34,35,37,41"]#,"scan distance 51 45 1.0 1.2 3"]
+        mol_opt_drv.tmax = 0.02
+        mol_opt_drv.filename = mol_scf_drv.file_name
+        mol_opt_drv.ostream.mute()
+        opt_results = mol_opt_drv.compute(molecule, mol_basis, mol_scf_results)
+        opt_mol = Molecule.read_xyz_string(opt_results["final_geometry"])
+        ffgen= MMForceFieldGenerator()
+        ffgen.create_topology(opt_mol)
+        ff_name = str(Path(target_path, f"{solvent_name}"))
+        ffgen.write_gromacs_files(filename=f"{ff_name}",mol_name=solvent_name)
+        #remove gro and top files generated
+        gro_file = ff_name + ".gro"
+        top_file = ff_name + ".top"
+        Path(gro_file).unlink(missing_ok=True)
+        Path(top_file).unlink(missing_ok=True)
+        return ff_name + ".itp"
 
     ########below are from top_combine.py##########
 
