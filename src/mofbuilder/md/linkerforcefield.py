@@ -132,10 +132,14 @@ class LinkerForceFieldGenerator:
             self.ostream.print_info(
                 f"xtb driver is using for linker optimization")
             self.ostream.flush()
-            opt_linker_mol = self._xtb_optimize(molecule,
+            constrained_opt_linker_mol = self._xtb_optimize(molecule,
                                                 self.reconnected_constraints)
-            opt_linker_mol.set_charge(self.linker_charge)
-            opt_linker_mol.set_multiplicity(self.linker_multiplicity)
+            constrained_opt_linker_mol.set_charge(self.linker_charge)
+            constrained_opt_linker_mol.set_multiplicity(self.linker_multiplicity)
+
+            free_opt_linker_mol, scf_result = self._dft_optimize(constrained_opt_linker_mol, None)
+            free_opt_linker_mol.set_charge(self.linker_charge)
+            free_opt_linker_mol.set_multiplicity(self.linker_multiplicity)
             ff_gen = MMForceFieldGenerator()
             self.ostream.print_info(
                 f"generating forcefield of linker molecule for Gromacs")
@@ -144,7 +148,7 @@ class LinkerForceFieldGenerator:
                 self.target_directory,
                 Path(self.linker_ff_name).with_suffix('.itp'))
             ffname = str(self.linker_itp_path).removesuffix('.itp')
-            ff_gen.create_topology(opt_linker_mol, resp=True)
+            ff_gen.create_topology(free_opt_linker_mol, resp=True)
             Path(self.linker_itp_path).parent.mkdir(parents=True,
                                                     exist_ok=True)
             ff_gen.write_gromacs_files(filename=ffname,

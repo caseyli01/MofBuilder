@@ -52,6 +52,7 @@ class Framework:
         self.linker_multiplicity = None
         self.linker_reconnect_drv = 'xtb'
         self.linker_reconnect_opt = True
+        self.reconnected_linker_molecule = None  #will be set after linker force field generation
         self.provided_linker_itpfile = None  #if provided, will map directly
 
         #debug
@@ -309,6 +310,7 @@ class Framework:
         if self.mofwriter.edges_data:
             self.linker_ff_gen.generate_reconnected_molecule_forcefield(self.mofwriter.edges_data[0])
         self.reconnected_linker_molecule = self.linker_ff_gen.dest_linker_molecule
+
     def md_prepare(self):
         #write gro file for the framework
         self.generate_linker_forcefield()
