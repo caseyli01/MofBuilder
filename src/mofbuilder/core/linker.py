@@ -417,7 +417,7 @@ class FrameLinker:
                         if self.lG.nodes[n]["label"] == "C":
                             adj_nodes = list(self.lG.adj[n])
                             for adj in adj_nodes:
-                                if self.lG.nodes[adj]["label"] != "H":
+                                if self.lG.nodes[adj]["label"] not in ["H", "D", "F", "Cl", "Br", "I"]:
                                     adj_nonH_num += 1
                             if adj_nonH_num > 2:
                                 self.Xs_indices.append(n)
@@ -438,7 +438,7 @@ class FrameLinker:
                                     lG_temp.nodes[n]["label"]
                                     for n in small_frag_nodes
                                 ]
-                                if not any(label == "H"
+                                if not any(label in  ["H", "D", "F", "Cl", "Br", "I"]
                                         for label in small_frag_labels):
                                     continue
                                 else:

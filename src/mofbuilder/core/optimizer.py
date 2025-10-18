@@ -213,10 +213,10 @@ class NetOptimizer:
                 saved_optimized_rotations = hf['optimized_rotations'][:]
                 if self._debug:
                     self.ostream.print_info(
-                        f"Loaded saved optimized rotations from {self.saved_optimized_rotations}"
+                        f"Loaded saved optimized rotations from {self.load_optimized_rotations}"
                     )
                     self.ostream.print_info(
-                        f"Loaded saved optimized rotations shape: {self.saved_optimized_rotations.shape}"
+                        f"Loaded saved optimized rotations shape: {saved_optimized_rotations.shape}"
                     )
             if not self.skip_rotation_optimization:  #load but not skip
                 self.ostream.print_info(
