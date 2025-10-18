@@ -227,6 +227,7 @@ class LinkerForceFieldGenerator:
         mol_scf_drv.xcfun = "blyp"
         mol_scf_drv.ri_coulomb = True
         mol_scf_drv.grid_level = 4
+        mol_scf_drv.ostream.mute()
         mol_scf_results = mol_scf_drv.compute(molecule, basis)
         mol_opt_drv = OptimizationDriver(mol_scf_drv)
         mol_opt_drv.conv_energy = 1e-04
