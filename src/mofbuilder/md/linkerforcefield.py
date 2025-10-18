@@ -31,7 +31,7 @@ class LinkerForceFieldGenerator:
         #need to be set before use
         self.linker_optimization = True
         self.optimize_drv = "xtb"  #xtb or qm
-        self.mmforcefield_generator = MMForceFieldGenerator()
+        #self.mmforcefield_generator = MMForceFieldGenerator()
         self.linker_ff_name = "Linker"
         self.linker_residue_name = "EDG"  #default residue name for linker
 
@@ -101,7 +101,7 @@ class LinkerForceFieldGenerator:
             #make x indices to be split from middle
             #connectivity_matrix,connect_constraints = self.reconnect(X_indices_coords, connectivity_matrix)
             #connectivity_matrix,connect_constraints = self.reconnect(lower_x_indices_coords, connectivity_matrix,connect_constraints)
-            ff_gen = self.mmforcefield_generator
+            ff_gen = MMForceFieldGenerator()
             ff_gen.topology_update_flag = True
             ff_gen.ostream.mute()
             ff_gen.connectivity_matrix = self.reconnected_connectivity_matrix
@@ -112,16 +112,20 @@ class LinkerForceFieldGenerator:
             ff_gen.write_gromacs_files(filename=ffname,
                                        mol_name=self.linker_residue_name)
         elif (self.linker_optimization and self.optimize_drv == "qm"):
-            opt_linker_mol, scf_result = self._dft_optimize(
+            constrained_opt_linker_mol, scf_result = self._dft_optimize(
                 molecule, self.reconnected_constraints)
-            opt_linker_mol.set_charge(self.linker_charge)
-            opt_linker_mol.set_multiplicity(self.linker_multiplicity)
-            ff_gen = self.mmforcefield_generator
-            basis = MolecularBasis.read(molecule, "def2-svp")
+            constrained_opt_linker_mol.set_charge(self.linker_charge)
+            constrained_opt_linker_mol.set_multiplicity(self.linker_multiplicity)
+            free_opt_linker_mol, scf_result = self._dft_optimize(
+                constrained_opt_linker_mol, None)
+            free_opt_linker_mol.set_charge(self.linker_charge)
+            free_opt_linker_mol.set_multiplicity(self.linker_multiplicity)
+            ff_gen = MMForceFieldGenerator()
+            #basis = MolecularBasis.read(free_opt_linker_mol, "def2-svp")
             self.linker_itp_path = Path(
                 self.target_directory, self.linker_ff_name).with_suffix('.itp')
             ffname = str(self.linker_itp_path).removesuffix('.itp')
-            ff_gen.create_topology(opt_linker_mol, resp=True)
+            ff_gen.create_topology(free_opt_linker_mol, resp=True)
             ff_gen.write_gromacs_files(filename=ffname,
                                        mol_name=self.linker_residue_name)
         elif (self.linker_optimization and self.optimize_drv == "xtb"):
@@ -132,7 +136,7 @@ class LinkerForceFieldGenerator:
                                                 self.reconnected_constraints)
             opt_linker_mol.set_charge(self.linker_charge)
             opt_linker_mol.set_multiplicity(self.linker_multiplicity)
-            ff_gen = self.mmforcefield_generator
+            ff_gen = MMForceFieldGenerator()
             self.ostream.print_info(
                 f"generating forcefield of linker molecule for Gromacs")
             self.ostream.flush()
