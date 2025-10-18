@@ -350,7 +350,7 @@ if __name__ == "__main__":
     gmx_ff.target_dir = 'tests/out'
     gmx_ff.node_metal_type = 'Zr'
     gmx_ff.dummy_atom_node= True
-    gmx_ff.termination_name = 'methyl'
+    gmx_ff.termination_name = 'acetate'
     gmx_ff.linker_itp_dir = ''
     gmx_ff.linker_name='Linker'
     gmx_ff.residues_info = {"METAL":5}

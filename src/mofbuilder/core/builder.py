@@ -92,8 +92,8 @@ class MetalOrganicFrameworkBuilder:
         self.dummy_atom_node_dict = None
 
         #need to be set by user
-        self.termination = False  # default use termination but need user to set the termination_filename
-        self.termination_filename = None  #can be set as xyzfile or name
+        self.termination = True  # default use termination but need user to set the termination_filename
+        self.termination_name = 'acetate'  #can be set as xyzfile or name
         self.termination_molecule = None  #can be set directly
 
         #optimization
@@ -174,6 +174,32 @@ class MetalOrganicFrameworkBuilder:
         self.mof_top_library.data_path = self.data_path
         self.mof_top_library.list_mof_family()
     
+    def list_available_terminations(self):
+        if self.data_path is None:
+            self.data_path = get_data_path()
+        self.ostream.print_title("Available Terminations:")
+        if Path(self.data_path, 'terminations_itps').is_dir():
+            for term_file in Path(self.data_path, 'terminations_itps').rglob('*.itp'):
+                if Path(self.data_path, 'terminations_database',term_file.stem + '.pdb').is_file():
+                    self.ostream.print_info(f" - {term_file.stem}")
+            self.ostream.flush()
+        else:
+            self.ostream.print_warning("No terminations found.")
+            self.ostream.flush()
+    
+    def list_available_solvents(self):
+        if self.data_path is None:
+            self.data_path = get_data_path()
+        self.ostream.print_title("Available Solvents:")
+        if Path(self.data_path, 'solvents_database').is_dir():
+            for solv_file in Path(self.data_path, 'solvents_database').rglob('*.itp'):
+                self.ostream.print_info(f" - {solv_file.stem}")
+            self.ostream.flush()
+        else:
+            self.ostream.print_warning("No solvents found.")
+            self.ostream.flush()
+
+
 
     def _read_net(self):
         if self.data_path is None:
@@ -272,20 +298,21 @@ class MetalOrganicFrameworkBuilder:
         if not self.termination:
             return
         #try to get a valid termination file
-        if self.termination_filename is None:
-            assert_msg_critical(
-                False,
-                "Termination is set to True but termination_filename is None.")
-        #termination_filename can be a file path or a name in the termination database
-        #check if the termination_filename is a valid file path
-        if not (Path(self.termination_filename).is_file()):
+        if self.termination_name is None:
+            self.ostream.print_info(
+                "Termination is set to True but termination_name is None. Skipping termination.")
+            self.termination = False
+            return
+        #termination_name can be a file path or a name in the termination database
+        #check if the termination_name is a valid file path
+        if not (Path(self.termination_name).is_file()):
             #check if the termination is a name in the termination database
             if self._debug:
                 self.ostream.print_info(
-                    f"Termination file {self.termination_filename} is not a valid file path. Searching in termination database."
+                    f"Termination file {self.termination_name} is not a valid file path. Searching in termination database."
                 )
                 self.ostream.flush()
-            keywords = [self.termination_filename]
+            keywords = [self.termination_name]
             nokeywords = []
             terminations_database_path = Path(self.data_path,
                                               "terminations_database")
@@ -294,16 +321,16 @@ class MetalOrganicFrameworkBuilder:
                 self.ostream)[0]
             assert_msg_critical(
                 selected_termination_pdb_filename is not None,
-                f"Termination file {self.termination_filename} does not exist in the termination database."
+                f"Termination file {self.termination_name} does not exist in the termination database."
             )
-            self.termination_filename = str(
+            self.termination_name = str(
                 Path(terminations_database_path,
                      selected_termination_pdb_filename))
         if self._debug:
             self.ostream.print_info(
-                f"Using termination file: {self.termination_filename}")
+                f"Using termination file: {self.termination_name}")
             self.ostream.flush()
-        self.frame_terminations.filename = self.termination_filename
+        self.frame_terminations.filename = self.termination_name
         self.frame_terminations.create()
 
         #pass termination data
@@ -330,7 +357,7 @@ class MetalOrganicFrameworkBuilder:
                 f"Linker: {self.frame_linker.linker_connectivity}")
             if self.termination:
                 self.ostream.print_info(
-                    f"Termination: {self.termination_filename}")
+                    f"Termination: {self.termination_name}")
             else:
                 self.ostream.print_info(f"Termination: None")
             self.ostream.print_info("Finished reading framework components.")
@@ -467,7 +494,7 @@ class MetalOrganicFrameworkBuilder:
         self.framework.sc_unit_cell_inv = self.net_optimizer.sc_unit_cell_inv
         self.framework.termination_X_data = self.termination_X_data
         self.framework.termination_Y_data = self.termination_Y_data
-        self.framework.termination_name = self.termination_filename
+        self.framework.termination_name = self.termination_name
         self.framework.src_linker_molecule = self.frame_linker.molecule
 
         self.framework.clean_unsaturated_linkers = self.clean_unsaturated_linkers
